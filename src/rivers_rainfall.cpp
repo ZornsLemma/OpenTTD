@@ -4783,6 +4783,371 @@ void RainfallRiverGenerator::ConnectRivers(int *river_map, int *river_iteration,
 }
 
 /* ========================================================= */
+/* ========== Get rid of rivers flowing upwards ============ */
+/* ========================================================= */
+
+/** Fixes situations where a river flows upwards, using the approach described in the comment of function FixUpwardsRivers below.
+ *  Given some particular tile, this function calculates the connected component of river/lake tiles of the same height (the height of that tile),
+ *  starting at that tile.
+ *
+ *  For any neighbor tile of that connected component (i.e. neighbor tile of one of its tiles, but not within the component) that is lower,
+ *  it makes a recursive call to itself.  If no such tile is found, the ocean is not reached, and no final lake is reached either,
+ *  the connected component is considered a basin within the river, and all its tiles get raised.
+ *
+ *  In that case, another recursive call with the same parameters is performed, as we might need to raise tiles a second time
+ *  if the barrier is high enough.
+ */
+void RainfallRiverGenerator::FixUpwardsRiverAfterTile(TileIndex tile, std::set<TileIndex> &river_tiles, std::set<TileIndex> &already_processed_tiles,
+													  RiverHeightConnectedComponentCalculator *connected_component_calculator, int *water_flow, byte *water_info, int max_flow,
+													  int *river_map, int *river_iteration)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+	TileIndex remove_neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	std::set<TileIndex> curr_tiles = std::set<TileIndex>();
+
+	/* Calculate the connected component.  Note that we consider tiles of arbitrary rivers for that component.  But for the recursive call below,
+     * we are only interested in tiles of the river we just process (to avoid doing the same work twice).
+     */
+	int height = GetTileZ(tile);
+	connected_component_calculator->ReInit(height);
+	connected_component_calculator->StoreConnectedComponent(curr_tiles, tile);
+
+	DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, ".... Checking connected component of " PRINTF_SIZE " tiles of height %i near (%i,%i)", curr_tiles.size(), height, TileX(tile), TileY(tile));
+
+	/* True if and only if the connected component has at least one neighbor tile that is (a) lower, or (b) ocean. */
+	bool lower_or_ocean_found = false;
+
+	/* True if and only if the connected component has a lake tile. */
+	bool lake_found = false;
+
+	/* The maximum flow seen within the connected component */
+	int local_max_flow = 0;
+
+	/* The maximum iteration of the own river seen in the current connected component */
+	int local_max_iteration = 0;
+
+	/* Iterate over all tiles of the current connected component */
+	for (std::set<TileIndex>::const_iterator it = curr_tiles.begin(); it != curr_tiles.end(); it++) {
+		TileIndex curr_tile = *it;
+		StoreStraightNeighborTiles(curr_tile, neighbor_tiles);
+		for (int n = DIR_BEGIN; n < DIR_END; n++) {
+			TileIndex neighbor_tile = neighbor_tiles[n];
+
+			if (neighbor_tile != INVALID_TILE) {
+				int neighbor_height;
+				Slope neighbor_slope = GetTileSlope(neighbor_tile, &neighbor_height);
+				if (neighbor_height < height && WasProcessed(water_info, neighbor_tile)) {
+					/* A lower neighbor tile that is considered to become lake/river and wasn´t yet processed. */
+					if (already_processed_tiles.find(neighbor_tile) == already_processed_tiles.end() && river_tiles.find(neighbor_tile) != river_tiles.end()) {
+						/* Part of this river --- perform the recursive call. */
+						this->FixUpwardsRiverAfterTile(neighbor_tile, river_tiles, already_processed_tiles, connected_component_calculator, water_flow, water_info, max_flow, river_map, river_iteration);
+					}
+					lower_or_ocean_found = true;
+				}
+
+				/* Due to the missing tile loop, not all flat tiles of height zero are actually MP_WATER, thus check it that way. */
+				if (neighbor_height == 0 && neighbor_slope == SLOPE_FLAT) {
+					lower_or_ocean_found = true;
+				}
+			}
+		}
+
+		if (IsOrdinaryLakeTile(water_info, curr_tile) || IsLakeCenter(water_info, curr_tile)) {
+			/* Found a lake */
+			lake_found = true;
+		} else if (TileX(curr_tile) == 1 || TileX(curr_tile) == MapMaxX() - 1 || TileY(curr_tile) == 1 || TileY(curr_tile) == MapMaxY() - 1) {
+			/* The map edge is considered like ocean. */
+			lower_or_ocean_found = true;
+		}
+
+		local_max_flow = max(local_max_flow, water_flow[curr_tile]);
+		if (river_map[curr_tile] == river_map[tile]) {
+			local_max_iteration = max(local_max_iteration, river_iteration[curr_tile]);
+		}
+		already_processed_tiles.insert(curr_tile);
+	}
+
+	/* True if and only if we actually raise the current connected component. */
+	bool raise_allowed = false;
+
+	/* Only lakes without outflow are a reason for not raising terrains.  Other lakes should have an outflow at their surface height,
+     * i.e. are subject to upwards flow check just as rivers.  Lakes have no outflow, if the maximum flow seen in that connected component
+     * is greater than the maximum flow of the river we just process.
+     */
+	bool lake_without_outflow = lake_found && local_max_flow >= max_flow;
+
+	/* Our strategy now is:
+     * (1) Try to lower a connected component of raised tiles, to get rid of the barrier that separates us from lower terrain.
+	 * (2) If that does not work, raise our connected component, to make it high enough to come over the barrier.
+     * The problem with (2) is that is sometimes affects quite a lot of tiles (e.g. if in a long flat valley, the river ascends towards
+	 * the edge, and quickly descends back to the vally).  Furthermore, it can only raise the river tiles, as we have no knowledge
+	 * about the other tiles, e.g. wether we are really in a basin, or there is a way around the barrier.
+	 * Thus, we want to avoid (2) if we can, and thus try (1) first, as it in general affects the landscape on a much smaller scale.
+	 */
+
+	/* Wether we lowered some tiles */
+	bool lowered = false;
+	if (!lower_or_ocean_found && !lake_without_outflow) {
+
+		/* We need a raise reason, i.e. a neighbor tile that is not part of the connected component, that is a planned river/lake tile,
+         * that has greater flow than our component, and a greater GetTileMaxZ.  Without that conditions, in some circumstances,
+         * we might accidentally raise terrain.  And as we do the work in a recursive manner, that terraforming in the worst case
+         * might stop not before it reaches the maximum allowed heightlevel.
+         * I.e., here we need to be really careful to not ruin our map.
+         */
+		for (std::set<TileIndex>::const_iterator it = curr_tiles.begin(); it != curr_tiles.end(); it++) {
+			TileIndex curr_tile = *it;
+			StoreStraightNeighborTiles(curr_tile, neighbor_tiles);
+			for (int n = DIR_BEGIN; n < DIR_END; n++) {
+				TileIndex neighbor_tile = neighbor_tiles[n];
+
+				/* Condition for recognizing upwards flow.  So far we only know that we did not find the way down, but the question
+				 * wether there is indeed a way up over some barrier is still open.
+				 */
+				if (neighbor_tile != INVALID_TILE
+					  && curr_tiles.find(neighbor_tile) == curr_tiles.end()
+					  && WasProcessed(water_info, neighbor_tile)
+					  && GetTileMaxZ(neighbor_tile) > height
+					  && (water_flow[neighbor_tile] >= local_max_flow
+						  || (river_map[neighbor_tile] == river_map[curr_tile] && river_iteration[neighbor_tile] > local_max_iteration))) {
+
+					const int RAISED_LIMIT = 20;
+
+					/* Search some tiles within a limited height interval.  Usually, barriers are quite short, so we don´t need to inspect hundreds of tiles, or similar.
+					 * This would just introduce the danger of demolishing landscape on the large scale.
+				     */
+					std::set<TileIndex> raised_tiles = std::set<TileIndex>();
+					connected_component_calculator->ReInit(height, true, height + 2, true);
+					connected_component_calculator->StoreConnectedComponent(raised_tiles, neighbor_tile, RAISED_LIMIT);
+
+					DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "........ Found " PRINTF_SIZE " connected tiles that are candidates for lowering.", raised_tiles.size());
+
+					/* Sometimes, on the barrier some other river joins.  It obviously is taken by our connected component search, but actually, we are not interested
+					 * in its tiles.  Thus, at least remove all tiles that have only one neighbor within the connected component, and do this iteratively until
+					 * we make no further progress.
+					 * Note that we explicitely do not test on the river id, to avoid removing tiles we should better not remove.
+					 */
+					bool remove_progress = false;
+					do {
+						remove_progress = false;
+						TileIndex remove_tile = INVALID_TILE;
+						for (std::set<TileIndex>::const_iterator raised_it = raised_tiles.begin(); raised_it != raised_tiles.end(); raised_it++) {
+							TileIndex raised_tile = *raised_it;
+
+							if (GetTileZ(raised_tile) > height) {
+								int neighbor_count = 0;
+								StoreStraightNeighborTiles(raised_tile, remove_neighbor_tiles);
+								for (int z = DIR_BEGIN; z < DIR_END; z++) {
+									if (remove_neighbor_tiles[z] != INVALID_TILE && raised_tiles.find(remove_neighbor_tiles[z]) != raised_tiles.end()) {
+										DEBUG(map, 9, "................ Increasing neighbor_count of (%i,%i) because of (%i,%i)",
+												TileX(raised_tile), TileY(raised_tile), TileX(remove_neighbor_tiles[z]),  TileY(remove_neighbor_tiles[z])); 
+										neighbor_count++;
+									}
+								}
+								if (neighbor_count <= 1) {
+									remove_tile = raised_tile;
+									remove_progress = true;
+									break;
+								}
+							}
+						}
+
+						if (remove_tile != INVALID_TILE) {
+							raised_tiles.erase(remove_tile);
+							DEBUG(map, 9, "............ Will not lower (%i,%i)", TileX(remove_tile), TileY(remove_tile));
+						}
+					} while (remove_progress);
+
+					if (raised_tiles.size() < RAISED_LIMIT) {
+						/* The search completed because we found all relevant tile, not because it hit the limit.  If it did that, we seem to have found
+						 * something "big", and better go with raising tiles below.
+						 */
+
+						DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "........ Trying to lower " PRINTF_SIZE " raised tiles near (%i,%i).",
+										  raised_tiles.size(), TileX(neighbor_tile), TileY(neighbor_tile));
+
+						/* Lower the raised connected component to the base height. */
+						bool success = true;
+						TerraformerState terraformer_state;
+						for (std::set<TileIndex>::const_iterator raised_it = raised_tiles.begin(); success && raised_it != raised_tiles.end(); raised_it++) {
+							TileIndex raised_tile = *raised_it;
+							DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "............ Tile (%i,%i)", TileX(raised_tile), TileY(raised_tile));
+							success &= SimulateTerraformTileToSlope(raised_tile, height, SLOPE_FLAT, terraformer_state);
+						}
+
+						/* If that leaves tiles with invalid slopes, iteratively try to improve them by lowering tiles. */
+						std::set<TileIndex> affected_tiles = std::set<TileIndex>();
+						success &= TryCompleteTerraformingByLoweringTiles(terraformer_state, water_info, neighbor_tiles, affected_tiles);
+
+						if (success) {
+							DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "............ Success.");
+							lowered = true;
+							break;
+						}
+
+						/* If that doesn´t help, don´t execute any terraforming here (as we want to leave things valid), and instead go to raising tiles below */
+					}
+
+					raise_allowed = true;
+				}
+			}
+		}
+
+		if (!lowered && !raise_allowed) {
+			DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "........ Found no lower tile, and no lake or ocean either, but will not raise anything, as no raise reason could be found.");
+		}
+	}
+
+	/* Nothing was lowered, but we found a reason to raise things (we only do that if there is indeed a tile leading upwards. */
+	if (!lowered && raise_allowed) {
+		DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "........ Found no lower tile, and no lake or ocean either, thus raising those tiles.");
+
+		/* Raise the connected component by one tile.  While it would often look nicer if we would also raise the non-river terrain
+		 * in a basin, we cannot sensefully do that here.  The reason is, that in some cases, the river flows over some mountain barrier,
+		 * while flat land goes outside around it.
+		 * I.e. we have no guarantee that the connected component of non-river tiles of that height is really a basin, or rather part of a huge
+		 * plain area.
+		 */
+		for (std::set<TileIndex>::const_iterator it = curr_tiles.begin(); it != curr_tiles.end(); it++) {
+			TileIndex curr_tile = *it;
+			TerraformTileToSlope(curr_tile, height + 1, SLOPE_FLAT);
+		}
+	}
+
+	if (lowered || raise_allowed) {
+		/* Perform a recursive call with the same parameters.  If the basin had depth two, we need to raise the river again. */
+		this->FixUpwardsRiverAfterTile(tile, river_tiles, already_processed_tiles, connected_component_calculator, water_flow, water_info, max_flow, river_map, river_iteration);
+	}
+
+	/* After we fixed things, there will always be a recursive call where a way down will be found, or at least no way up.  Then, fix isolated "islands" of ascended river tiles
+	 * along the edge of the river.
+	 */
+	if (!lowered && !raise_allowed) {
+		this->FixRaisedRiverIslands(curr_tiles, connected_component_calculator, height, water_flow, water_info, river_map, river_iteration);
+	}
+}
+
+/** This function fixes isolated "islands" of ascended river tiles along some river. I.e. sections of a river, that first flow upwards, and maybe then down, but don´t block the way down
+ *  completely.
+ */
+void RainfallRiverGenerator::FixRaisedRiverIslands(std::set<TileIndex> &connected_component, RiverHeightConnectedComponentCalculator *connected_component_calculator,
+				int height, int *water_flow, byte *water_info, int *river_map, int *river_iteration)
+{
+	/* Maximum number of tiles to look at */
+	const int RAISE_TILE_LIMIT = 12;
+
+	/* Maximum height offset to look upwards.  If we find tiles higher than that, we rather step up some side river. */
+	const int MAX_RAISE_HEIGHT_OFFSET = 2;
+
+	/* Iterate over the connected component of some height of the river */
+	std::set<TileIndex> processed_tiles = std::set<TileIndex>();
+	for (std::set<TileIndex>::const_iterator it = connected_component.begin(); it != connected_component.end(); it++) {
+		TileIndex tile = *it;
+		Slope slope = GetTileSlope(tile);
+
+		/* If we find an inclined slope, check wether there is a way up */
+		if (IsInclinedSlope(slope)) {
+			Direction lower_direction = GetLowerDirectionForInclinedSlope(slope);
+		    TileIndex lower_tile = AddDirectionToTile(tile, lower_direction);
+			if (lower_tile != INVALID_TILE
+				   && connected_component.find(lower_tile) != connected_component.end()
+				   && processed_tiles.find(tile) == processed_tiles.end()
+				   && (water_flow[lower_tile] < water_flow[tile]
+						|| (river_map[lower_tile] == river_map[tile] && river_iteration[lower_tile] < river_iteration[tile]))) {
+
+				/* Only recognize the way up, if it leads to bigger flow, or a bigger iteration.  This should exclude most side rivers. */
+
+				DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "........ Tile (%i,%i) with flow %i, river %i, iteration %i is greater than (%i,%i) with flow %i, river %i, iteration %i, "
+																			  "checking for raised river section.", TileX(tile), TileY(tile), water_flow[tile], river_map[tile], river_iteration[tile],
+																			  TileX(lower_tile), TileY(lower_tile), water_flow[lower_tile], river_map[lower_tile], river_iteration[lower_tile]);
+
+				std::set<TileIndex> raised_tiles = std::set<TileIndex>();
+				connected_component_calculator->ReInit(height, true, height + MAX_RAISE_HEIGHT_OFFSET, true);
+				connected_component_calculator->StoreConnectedComponent(raised_tiles, tile, RAISE_TILE_LIMIT);
+				processed_tiles.insert(raised_tiles.begin(), raised_tiles.end());
+
+				/* Check wether we found a tile at the maximum height we searched for */
+				bool max_found = false;
+				for (std::set<TileIndex>::const_iterator raised_it = raised_tiles.begin(); raised_it != raised_tiles.end(); raised_it++) {
+					TileIndex raised_tile = *raised_it;
+					int raised_height;
+					Slope raised_slope = GetTileSlope(raised_tile, &raised_height);
+					if (raised_height == height + MAX_RAISE_HEIGHT_OFFSET && IsInclinedSlope(raised_slope)) {
+						max_found = true;
+						break;
+					}
+				}
+
+				DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "............ Found max tile: %i; found " PRINTF_SIZE " raised tiles.", max_found, raised_tiles.size());
+
+				if (!max_found && raised_tiles.size() < RAISE_TILE_LIMIT) {
+					/* No tile at maximum searched heightlevel was found, and the limit on the number of tiles wasn´t hit either.
+					 * I.e. we have a clearly limited connected component of higher tiles, and lower them now.
+					 */
+					bool success = true;
+
+					TerraformerState terraformer_state;
+					for (std::set<TileIndex>::const_iterator raised_it = raised_tiles.begin(); success && raised_it != raised_tiles.end(); raised_it++) {
+						TileIndex raised_tile = *raised_it;
+						success &= SimulateTerraformTileToSlope(raised_tile, height, SLOPE_FLAT, terraformer_state);
+					}
+
+					/* But only if we don´t demolish other river parts. */
+					if (success && this->AreAffectedTilesSuitableForWater(terraformer_state, water_info)) {
+						DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "............ Lowering those tiles is successful, doing it.");
+						ExecuteTerraforming(terraformer_state);
+					} else {
+						DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "............ Lowering those tiles is not possible, most probably because another river would be damaged.");
+					}
+				}
+			}
+		}
+	}
+}
+
+/** The previous steps in some cases left combinations of river tiles that give the impression that your river flows upwards.
+ *  This function iterates over all rivers, top-down, and processes the river as a series of connected components of some height.
+ *  E.g., first the connected component of height 9, then one of height 8, then one of height 7, and so on.
+ *  Once one of those connected components is (1) not a neighbor of the ocean, (2) not a lake with the maximum flow of the river at hand, and
+ *  (3) has no lower neighbor tile, it is recognized a basin within the river.  It then either lowers the barrier (preferred) or raises
+ *  the connected component (otherwise), and additionally gets rid of isolated raised side sections of the river (by lowering them).
+ */
+void RainfallRiverGenerator::FixUpwardsRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info)
+{
+	RiverHeightConnectedComponentCalculator *connected_component_calculator = new RiverHeightConnectedComponentCalculator(water_info);
+	for (std::map<int, River*>::const_iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
+		int id = it->first;
+		River *river = it->second;
+
+		int max_flow = river->GetMaxFlow();
+
+		/* The tiles we process for this river. */
+		std::set<TileIndex> tiles = std::set<TileIndex>();
+		tiles.insert(river->tiles.begin(), river->tiles.end());
+
+		/* The tiles we already inspected. */
+		std::set<TileIndex> already_processed_tiles = std::set<TileIndex>();
+
+		/* The actual work is done in the recursive function called below.  Usually, just one call to it is necessary, but if the river flows upwards at some point,
+         * but has a bypass downwards that is not part of the river (because some other river merges and leaves again) that recursive function will stop at that point.
+         * There is nothing bad at that behaviour, just we need to start again to avoid missing some part of the river in our check.
+		 */
+		while(already_processed_tiles.size() < tiles.size()) {
+			for (uint n = 0; n < river->tiles.size(); n++) {
+				if (already_processed_tiles.find(river->tiles[n]) == already_processed_tiles.end()) {
+					DEBUG(map, RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL, "Checking for upwards flow in river %i, with " PRINTF_SIZE " tiles, starting at tile #%u", id, tiles.size(), n);
+					this->FixUpwardsRiverAfterTile(river->tiles[n], tiles, already_processed_tiles, connected_component_calculator, water_flow, water_info, max_flow, river_map, river_iteration);
+					break;
+				}
+			}
+
+		}
+	}
+	delete connected_component_calculator;
+}
+
+/* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
 
@@ -5208,6 +5573,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  * (13) Improve bad inclined river slopes, i.e. (some of) those that have no direct upper or lower counterpart.
  * (14) Derive logical rivers.  Used for fine tuning like preventing upwards flow.  Might be useful for generating river names.
  * (15) Set up connections between the logical rivers.
+ * (16) Get rid of rivers flowing upwards.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
@@ -5311,6 +5677,9 @@ void RainfallRiverGenerator::GenerateRivers()
 
 	/* (15) Set up connections between the logical rivers (i.e. where they join) */
 	this->ConnectRivers(river_map, river_iteration, id_to_river);
+
+	/* (16) Get rid of rivers flowing upwards. */
+	this->FixUpwardsRivers(river_map, river_iteration, id_to_river, water_flow, water_info);
 
 	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);

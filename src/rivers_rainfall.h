@@ -125,6 +125,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_MOVE_WATER_LOG_LEVEL 9
 #define RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL 9
 #define RAINFALL_DERIVE_RIVERS_LOG_LEVEL 9
+#define RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -1238,6 +1239,13 @@ private:
 
 	void DeriveRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info);
 	void ConnectRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river);
+
+	void FixUpwardsRiverAfterTile(TileIndex tile, std::set<TileIndex> &river_tiles, std::set<TileIndex> &already_processed_tiles,
+								  RiverHeightConnectedComponentCalculator *connected_component_calculator, int *water_flow, byte *water_info, int max_flow,
+								  int *river_map, int *river_iteration);
+	void FixRaisedRiverIslands(std::set<TileIndex> &connected_component, RiverHeightConnectedComponentCalculator *connected_component_calculator, int height, int *water_flow, byte *water_info,
+							   int *river_map, int *river_iteration);
+	void FixUpwardsRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info);
 
 	bool IsIsolatedCorner(TileIndex neighbor_tiles[DIR_COUNT], Direction corner_direction, Direction adjacent_direction_one, Direction adjacent_direction_two);
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
