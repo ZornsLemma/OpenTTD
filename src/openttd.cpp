@@ -359,6 +359,16 @@ void MakeNewgameSettingsLive()
 	/* Copy newgame settings to active settings.
 	 * Also initialise old settings needed for savegame conversion. */
 	_settings_game = _settings_newgame;
+
+	/* Really copy the char*, instead of just copying a pointer reference.  The aim is avoiding double frees.
+	 * I´m not sure wether there is a more elegant solution for this.  Maybe it is even a null issue; in case the copy
+	 * in _settings_game is never freed, there wouldn´t be any problem anyway.
+	 * Compare also the short forum discussion near http://www.tt-forums.net/viewtopic.php?f=33&t=71970&start=180#p1159035
+	 * One suggestion there was to switch to std::string for those strings.  Would need code conversions at other places
+	 * though.
+	 */
+	_settings_game.game_creation.rainfall.town_placers = stredup(_settings_game.game_creation.rainfall.town_placers);
+
 	_old_vds = _settings_client.company.vehicle;
 
 	for (CompanyID c = COMPANY_FIRST; c < MAX_COMPANIES; c++) {

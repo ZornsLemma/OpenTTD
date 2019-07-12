@@ -20,7 +20,11 @@
 #include "window_func.h"
 #include "window_gui.h"
 
+#include "core/alloc_func.hpp"
 #include "table/strings.h"
+#include <sstream>
+#include <string>
+
 
 #include "widgets/dropdown_func.h"
 #include "widgets/dropdown_type.h"
@@ -158,6 +162,45 @@ struct TownPlacerGUIList {
 			this->config[this->selected_line] = config;
 		}
 	}
+
+	void AppendInteger(std::string &s, int n)
+	{
+		std::stringstream stream;
+		stream << n;
+		s += stream.str();
+	}
+
+	void Serialize(std::string &s)
+	{
+		s += "[";
+
+		for (std::vector<TownPlacerConfig>::const_iterator it = this->config.begin(); it != this->config.end(); it++) {
+			TownPlacerConfig curr_config = *it;
+			s += "{";
+
+			s += "placer:";
+			this->AppendInteger(s, curr_config.town_placer);
+
+			s += ",weight:";
+			this->AppendInteger(s, curr_config.weight);
+
+			s += ",params:[";
+
+			for (std::map<int, int>::const_iterator it = curr_config.parameter_map.begin(); it != curr_config.parameter_map.end(); it++) {
+				if (it != curr_config.parameter_map.begin()) {
+					s += ",";
+				}
+				s += "{index:";
+				this->AppendInteger(s, it->first);
+				s += ",value:";
+				this->AppendInteger(s, it->second);
+				s += "}";
+			}
+			s += "]}";
+		}
+
+		s += "]";
+	}
 };
 
 /** In this window, expert options for town placement using the rainfall river generator can be configured.
@@ -168,6 +211,26 @@ struct TownRainfallOptionsWindow : Window {
 private:
 	TownPlacerGUIList lists[2];
 	std::vector<TownPlacer*> town_placers;
+
+	void SerializeTownPlacerConfig()
+	{
+		std::string config_string = "";
+		config_string += "[{phase:\"ONE_CITY\",configs:";
+		this->lists[TPP_PHASE_ONE_CITY].Serialize(config_string);
+		config_string += "},{phase:\"TWO_TOWN\",configs:";
+		this->lists[TPP_PHASE_TWO_TOWN].Serialize(config_string);
+		config_string += "}]";
+
+		if (_settings_newgame.game_creation.rainfall.town_placers != NULL) {
+			free(_settings_newgame.game_creation.rainfall.town_placers);
+		}
+
+		int length = config_string.size() + 1;
+		_settings_newgame.game_creation.rainfall.town_placers = MallocT<char>(length);
+		strecpy(_settings_newgame.game_creation.rainfall.town_placers, config_string.c_str(), _settings_newgame.game_creation.rainfall.town_placers + length);
+
+		DEBUG(misc, 0, "Serialized config: %s", _settings_newgame.game_creation.rainfall.town_placers);
+	}
 
 public:
 	TownRainfallOptionsWindow(WindowDesc *desc, Window *parent, WindowNumber window_number = 0) : Window(desc)
@@ -211,11 +274,13 @@ public:
 	void AddConfig(TownPlacerPhase phase, TownPlacerConfig config)
 	{
 		this->lists[phase].config.push_back(config);
+		this->SerializeTownPlacerConfig();
 	}
 
 	void ReplaceSelectedConfig(TownPlacerPhase phase, TownPlacerConfig config)
 	{
-		this->list[phase].ReplaceSelectedConfig(config);
+		this->lists[phase].ReplaceSelectedConfig(config);
+		this->SerializeTownPlacerConfig();
 	}
 
 	virtual void OnClick(Point pt, int widget, int click_count)
@@ -244,6 +309,7 @@ public:
 			case WID_TROP_PHASE_ONE_DELETE_BUTTON:
 				if (this->lists[TPP_PHASE_ONE_CITY].HasSelectedLine()) {
 					this->lists[TPP_PHASE_ONE_CITY].DeleteSelectedLine();
+					this->SerializeTownPlacerConfig();
 					this->SetDirty();
 				}
 				break;
@@ -262,6 +328,7 @@ public:
 			case WID_TROP_PHASE_TWO_DELETE_BUTTON:
 				if (this->lists[TPP_PHASE_TWO_TOWN].HasSelectedLine()) {
 					this->lists[TPP_PHASE_TWO_TOWN].DeleteSelectedLine();
+					this->SerializeTownPlacerConfig();
 					this->SetDirty();
 				}
 				break;
@@ -433,9 +500,9 @@ struct TownPlacerEditWindow : Window {
 				}
 
 				if (this->config.parameter_map.find(parameter_index) != this->config.parameter_map.end()) {
-					int desired_value = this->config.parameter_map[parameter_index]);
+					int desired_value = this->config.parameter_map[parameter_index];
 
-					if (desired_value >= parameter->GetMinValue() && desired_value <= parameter->GetMaxValue()) {
+					if (desired_value >= parameter.GetMinValue() && desired_value <= parameter.GetMaxValue()) {
 						SetDParam(0, desired_value);
 						this->querystrings[curr_widget_index]->SetString(STR_JUST_INT);
 					}

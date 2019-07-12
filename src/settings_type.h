@@ -22,6 +22,7 @@
 #include "zoom_type.h"
 #include "openttd.h"
 
+#include <string.h>
 
 /** Settings profiles and highscore tables. */
 enum SettingsProfile {
@@ -291,7 +292,7 @@ struct RainfallSettings {
 	uint16 lake_shore_probability;                         ///< probability (measured in 1/1000) that the algorithm starts generating additional land at a shore tile of a lake
 	uint16 lake_shore_max_size;                            ///< RandomRange(<this number>) is the (maximum) number of tiles of one shore expansion region
 
-	char* town_placers;                              ///< Town placer settings, in a json-like format because it is conceptionally a list of config objects
+	char* town_placers;                                    ///< Town placer settings, in a json-like format because it is conceptionally a list of config objects
 };
 
 /** Settings related to the creation of games. */
