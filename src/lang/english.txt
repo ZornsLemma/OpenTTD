@@ -1095,6 +1095,16 @@ STR_TOWN_PLACER_NONE                                            :No towns
 
 # Town Placer of Rainfall River Generator Expert Options
 STR_TP_RAINFALL_CAPTION                                         :{WHITE}Configuration of Town Placement using Rainfall River Generator
+STR_TP_RAINFALL_PHASE_ONE_CAPTION                               :{WHITE}Phase 1: Cities
+STR_TP_RAINFALL_PHASE_ONE_TOOLTIP                               :First, only cities will be founded.  They should get the chance to occupy the really good locations, without competition by towns.
+STR_TP_RAINFALL_PHASE_TWO_CAPTION                               :{WHITE}Phase 2: Towns
+STR_TP_RAINFALL_PHASE_TWO_TOOLTIP                               :In a second step, the towns will be founded.
+STR_TP_RAINFALL_ADD_BUTTON_CAPTION                              :{BLACK}Add
+STR_TP_RAINFALL_ADD_BUTTON_TOOLTIP                              :Add a town placer configuration
+STR_TP_RAINFALL_EDIT_BUTTON_CAPTION                             :{BLACK}Edit
+STR_TP_RAINFALL_EDIT_BUTTON_TOOLTIP                             :Edit the selected town placer configuration
+STR_TP_RAINFALL_DELETE_BUTTON_CAPTION                           :{BLACK}Delete
+STR_TP_RAINFALL_DELETE_BUTTON_TOOLTIP                           :Delete the selected town placer configuration
 
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced

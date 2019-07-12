@@ -128,6 +128,16 @@ enum RainfallOptionWidgets {
 
 /** Widgets for the expert settings of town placement using the Rainfall River Generator */
 enum TownRainfallOptionWidgets {
+	WID_TROP_PHASE_ONE_MATRIX,                 ///< Matrix showing phase one of town placer configuration
+	WID_TROP_PHASE_ONE_SCROLLBAR,              ///< Scrollbar for phase one of town placer configuration
+	WID_TROP_PHASE_TWO_MATRIX,                 ///< Matrix showing phase two of town placer configuration
+	WID_TROP_PHASE_TWO_SCROLLBAR,              ///< Scrollbar for phase two of town placer configuration
+	WID_TROP_PHASE_ONE_ADD_BUTTON,             ///< Add button phase one
+	WID_TROP_PHASE_ONE_EDIT_BUTTON,            ///< Edit button phase one
+	WID_TROP_PHASE_ONE_DELETE_BUTTON,          ///< Delete button phase one
+	WID_TROP_PHASE_TWO_ADD_BUTTON,             ///< Add button phase two
+	WID_TROP_PHASE_TWO_EDIT_BUTTON,            ///< Edit button phase two
+	WID_TROP_PHASE_TWO_DELETE_BUTTON,          ///< Delete button phase two
 };
 
 /** Widgets of the #GenerateProgressWindow class. */

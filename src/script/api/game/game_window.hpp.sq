@@ -541,6 +541,16 @@ void SQGSWindow_Register(Squirrel *engine)
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_RFO_SHORE_MAX_SIZE_DOWN,               "WID_RFO_SHORE_MAX_SIZE_DOWN");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_RFO_SHORE_MAX_SIZE_TEXT,               "WID_RFO_SHORE_MAX_SIZE_TEXT");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_RFO_SHORE_MAX_SIZE_UP,                 "WID_RFO_SHORE_MAX_SIZE_UP");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_ONE_MATRIX,                 "WID_TROP_PHASE_ONE_MATRIX");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_ONE_SCROLLBAR,              "WID_TROP_PHASE_ONE_SCROLLBAR");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_TWO_MATRIX,                 "WID_TROP_PHASE_TWO_MATRIX");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_TWO_SCROLLBAR,              "WID_TROP_PHASE_TWO_SCROLLBAR");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_ONE_ADD_BUTTON,             "WID_TROP_PHASE_ONE_ADD_BUTTON");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_ONE_EDIT_BUTTON,            "WID_TROP_PHASE_ONE_EDIT_BUTTON");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_ONE_DELETE_BUTTON,          "WID_TROP_PHASE_ONE_DELETE_BUTTON");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_TWO_ADD_BUTTON,             "WID_TROP_PHASE_TWO_ADD_BUTTON");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_TWO_EDIT_BUTTON,            "WID_TROP_PHASE_TWO_EDIT_BUTTON");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TROP_PHASE_TWO_DELETE_BUTTON,          "WID_TROP_PHASE_TWO_DELETE_BUTTON");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GP_PROGRESS_BAR,                       "WID_GP_PROGRESS_BAR");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GP_PROGRESS_TEXT,                      "WID_GP_PROGRESS_TEXT");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GP_ABORT,                              "WID_GP_ABORT");
