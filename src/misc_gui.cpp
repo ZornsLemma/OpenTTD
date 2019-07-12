@@ -990,6 +990,21 @@ void QueryString::ClickEditBox(Window *w, Point pt, int wid, int click_count, bo
 	}
 }
 
+void QueryString::SetString(StringID str)
+{
+	char *last_of = &this->text.buf[this->text.max_bytes - 1];
+	GetString(this->text.buf, str, last_of);
+	str_validate(this->text.buf, last_of, SVS_NONE);
+
+	/* Make sure the name isn't too long for the text buffer in the number of
+	 * characters (not bytes). max_chars also counts the '\0' characters. */
+	while (Utf8StringLength(this->text.buf) + 1 > this->text.max_chars) {
+		*Utf8PrevChar(this->text.buf + strlen(this->text.buf)) = '\0';
+	}
+
+	this->text.UpdateSize();
+}
+
 /** Class for the string query window. */
 struct QueryStringWindow : public Window
 {
@@ -999,17 +1014,7 @@ struct QueryStringWindow : public Window
 	QueryStringWindow(StringID str, StringID caption, uint max_bytes, uint max_chars, WindowDesc *desc, Window *parent, CharSetFilter afilter, QueryStringFlags flags) :
 			Window(desc), editbox(max_bytes, max_chars)
 	{
-		char *last_of = &this->editbox.text.buf[this->editbox.text.max_bytes - 1];
-		GetString(this->editbox.text.buf, str, last_of);
-		str_validate(this->editbox.text.buf, last_of, SVS_NONE);
-
-		/* Make sure the name isn't too long for the text buffer in the number of
-		 * characters (not bytes). max_chars also counts the '\0' characters. */
-		while (Utf8StringLength(this->editbox.text.buf) + 1 > this->editbox.text.max_chars) {
-			*Utf8PrevChar(this->editbox.text.buf + strlen(this->editbox.text.buf)) = '\0';
-		}
-
-		this->editbox.text.UpdateSize();
+		editbox.SetString(str);
 
 		if ((flags & QSF_ACCEPT_UNCHANGED) == 0) this->editbox.orig = stredup(this->editbox.text.buf);
 
