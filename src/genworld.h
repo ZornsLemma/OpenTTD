@@ -103,6 +103,14 @@ void StartScenarioEditor();
 
 extern bool _generating_world;
 
+/** River generators */
+enum RiverGeneratorEnum {
+	/* Order of these enums has to be the same as in lang/english.txt
+	 * Otherwise you will get inconsistent behaviour. */
+	RG_ORIGINAL     = 0,  ///< The original river generator
+	RG_RAINFALL     = 1,  ///< Rainfall River Generator
+};
+
 /* Just a small base class for RiverGenerators. */
 struct RiverGenerator {
 public:

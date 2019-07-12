@@ -291,6 +291,7 @@ struct GameCreationSettings {
 	byte   custom_sea_level;                 ///< manually entered percentage of water in the map
 	byte   min_river_length;                 ///< the minimum river length
 	byte   river_route_random;               ///< the amount of randomicity for the route finding
+	byte   river_generator;                  ///< the river generator
 	byte   amount_of_rivers;                 ///< the amount of rivers
 };
 

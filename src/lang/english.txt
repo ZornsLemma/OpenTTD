@@ -1062,6 +1062,9 @@ STR_SEA_LEVEL_HIGH                                              :High
 STR_SEA_LEVEL_CUSTOM                                            :Custom
 STR_SEA_LEVEL_CUSTOM_PERCENTAGE                                 :Custom ({NUM}%)
 
+STR_RIVER_GENERATOR_ORIGINAL                                    :Original
+STR_RIVER_GENERATOR_RAINFALL                                    :Rainfall
+
 STR_RIVERS_NONE                                                 :None
 STR_RIVERS_FEW                                                  :Few
 STR_RIVERS_MODERATE                                             :Medium
@@ -1310,6 +1313,8 @@ STR_CONFIG_SETTING_ROUGHNESS_OF_TERRAIN_ROUGH                   :Rough
 STR_CONFIG_SETTING_ROUGHNESS_OF_TERRAIN_VERY_ROUGH              :Very Rough
 STR_CONFIG_SETTING_VARIETY                                      :Variety distribution: {STRING2}
 STR_CONFIG_SETTING_VARIETY_HELPTEXT                             :(TerraGenesis only) Control whether the map contains both mountainous and flat areas. Since this only makes the map flatter, other settings should be set to mountainous
+STR_CONFIG_SETTING_RIVER_GENERATOR                              :River Generator: {STRING2}
+STR_CONFIG_SETTING_RIVER_GENERATOR_HELPTEXT                     :Choose which river generator to use: The original one, or the rainfall river generator.  The latter offers various configuration options.
 STR_CONFIG_SETTING_RIVER_AMOUNT                                 :River amount: {STRING2}
 STR_CONFIG_SETTING_RIVER_AMOUNT_HELPTEXT                        :Choose how many rivers to generate
 STR_CONFIG_SETTING_TREE_PLACER                                  :Tree placer algorithm: {STRING2}
@@ -2734,7 +2739,10 @@ STR_MAPGEN_LAND_GENERATOR                                       :{BLACK}Land gen
 STR_MAPGEN_TREE_PLACER                                          :{BLACK}Tree algorithm:
 STR_MAPGEN_TERRAIN_TYPE                                         :{BLACK}Terrain type:
 STR_MAPGEN_QUANTITY_OF_SEA_LAKES                                :{BLACK}Sea level:
-STR_MAPGEN_QUANTITY_OF_RIVERS                                   :{BLACK}Rivers:
+STR_MAPGEN_RIVER_GENERATOR                                      :{BLACK}River Generator:
+STR_MAPGEN_QUANTITY_OF_RIVERS                                   :{BLACK}River Amount:
+STR_MAPGEN_RIVER_EXPERT_SETTINGS_BUTTON_CAPTION                 :{BLACK}Details
+STR_MAPGEN_RIVER_EXPERT_SETTINGS_BUTTON_TOOLTIP                 :{BLACK}Click here to configure what the river generator does in detail.  Only possible for the Rainfall River Generator.
 STR_MAPGEN_SMOOTHNESS                                           :{BLACK}Smoothness:
 STR_MAPGEN_VARIETY                                              :{BLACK}Variety distribution:
 STR_MAPGEN_GENERATE                                             :{WHITE}Generate

@@ -475,7 +475,9 @@ void SQGSWindow_Register(Squirrel *engine)
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_HEIGHTMAP_ROTATION_PULLDOWN,        "WID_GL_HEIGHTMAP_ROTATION_PULLDOWN");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_TERRAIN_PULLDOWN,                   "WID_GL_TERRAIN_PULLDOWN");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_WATER_PULLDOWN,                     "WID_GL_WATER_PULLDOWN");
-	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_RIVER_PULLDOWN,                     "WID_GL_RIVER_PULLDOWN");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_RIVER_GENERATOR_PULLDOWN,           "WID_GL_RIVER_GENERATOR_PULLDOWN");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_RIVER_AMOUNT_PULLDOWN,              "WID_GL_RIVER_AMOUNT_PULLDOWN");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_RIVER_EXPERT_SETTINGS_BUTTON,       "WID_GL_RIVER_EXPERT_SETTINGS_BUTTON");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_SMOOTHNESS_PULLDOWN,                "WID_GL_SMOOTHNESS_PULLDOWN");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_VARIETY_PULLDOWN,                   "WID_GL_VARIETY_PULLDOWN");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_GL_BORDERS_RANDOM,                     "WID_GL_BORDERS_RANDOM");

@@ -1312,7 +1312,9 @@ public:
 
 		WID_GL_TERRAIN_PULLDOWN                      = ::WID_GL_TERRAIN_PULLDOWN,                      ///< Dropdown 'Terrain type'.
 		WID_GL_WATER_PULLDOWN                        = ::WID_GL_WATER_PULLDOWN,                        ///< Dropdown 'Sea level'.
-		WID_GL_RIVER_PULLDOWN                        = ::WID_GL_RIVER_PULLDOWN,                        ///< Dropdown 'Rivers'.
+		WID_GL_RIVER_GENERATOR_PULLDOWN              = ::WID_GL_RIVER_GENERATOR_PULLDOWN,              ///< Dropdown 'River Generator'.
+		WID_GL_RIVER_AMOUNT_PULLDOWN                 = ::WID_GL_RIVER_AMOUNT_PULLDOWN,                 ///< Dropdown 'River Generator'.
+		WID_GL_RIVER_EXPERT_SETTINGS_BUTTON          = ::WID_GL_RIVER_EXPERT_SETTINGS_BUTTON,          ///< Button 'Expert settings for rivers'
 		WID_GL_SMOOTHNESS_PULLDOWN                   = ::WID_GL_SMOOTHNESS_PULLDOWN,                   ///< Dropdown 'Smoothness'.
 		WID_GL_VARIETY_PULLDOWN                      = ::WID_GL_VARIETY_PULLDOWN,                      ///< Dropdown 'Variety distribution'.
 
