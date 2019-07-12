@@ -1734,7 +1734,7 @@ static void UpdateTownGrowth(Town *t);
  * @param layout the (road) layout of the town
  * @param manual was the town placed manually?
  */
-static void DoCreateTown(Town *t, TileIndex tile, uint32 townnameparts, TownSize size, bool city, TownLayout layout, bool manual)
+void DoCreateTown(Town *t, TileIndex tile, uint32 townnameparts, TownSize size, bool city, TownLayout layout, bool manual)
 {
 	t->xy = tile;
 	t->cache.num_houses = 0;
@@ -1815,7 +1815,7 @@ static void DoCreateTown(Town *t, TileIndex tile, uint32 townnameparts, TownSize
  * @param tile tile to check
  * @return error value or zero cost
  */
-static CommandCost TownCanBePlacedHere(TileIndex tile)
+CommandCost TownCanBePlacedHere(TileIndex tile)
 {
 	/* Check if too close to the edge of map */
 	if (DistanceFromEdge(tile) < 12) {
@@ -1977,7 +1977,7 @@ CommandCost CmdFoundTown(TileIndex tile, DoCommandFlag flags, uint32 p1, uint32 
  * @param layout which town layout algo is in effect
  * @return the adjusted tile
  */
-static TileIndex AlignTileToGrid(TileIndex tile, TownLayout layout)
+TileIndex AlignTileToGrid(TileIndex tile, TownLayout layout)
 {
 	switch (layout) {
 		case TL_2X2_GRID: return TileXY(TileX(tile) - TileX(tile) % 3, TileY(tile) - TileY(tile) % 3);
@@ -2080,6 +2080,28 @@ static TileIndex FindNearestGoodCoastalTownSpot(TileIndex tile, TownLayout layou
 
 	/* if we get here just give up */
 	return INVALID_TILE;
+}
+
+bool UndoTownCreationIfNecessary(Town *town)
+{
+	/* if the population is still 0 at the point, then the
+	 * placement is so bad it couldn't grow at all */
+	if (town->cache.population == 0) {
+		Backup<CompanyID> cur_company(_current_company, OWNER_TOWN, FILE_LINE);
+		CommandCost rc = DoCommand(town->xy, town->index, 0, DC_EXEC, CMD_DELETE_TOWN);
+		cur_company.Restore();
+		assert(rc.Succeeded());
+
+		/* We already know that we can allocate a single town when
+		 * entering this function. However, we create and delete
+		 * a town which "resets" the allocation checks. As such we
+		 * need to check again when assertions are enabled. */
+		assert(Town::CanAllocateItem());
+
+		return false;
+	} else {
+		return true;
+	}
 }
 
 static Town *CreateRandomTown(uint attempts, uint32 townnameparts, TownSize size, bool city, TownLayout layout)

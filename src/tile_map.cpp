@@ -23,7 +23,7 @@
  * @param[out] h The lowest height of the four corners.
  * @return The slope.
  */
-static Slope GetTileSlopeGivenHeight(int hnorth, int hwest, int heast, int hsouth, int *h)
+Slope GetTileSlopeGivenHeight(int hnorth, int hwest, int heast, int hsouth, int *h)
 {
 	/* Due to the fact that tiles must connect with each other without leaving gaps, the
 	 * biggest difference in height between any corner and 'min' is between 0, 1, or 2.

@@ -67,6 +67,8 @@ public:
 		return this->text.buf;
 	}
 
+	void SetString(StringID str);
+
 	/**
 	 * Get the position of the caret in the text buffer.
 	 * @return Pointer to the caret in the text buffer.

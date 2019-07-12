@@ -451,6 +451,24 @@ enum WindowClass {
 	WC_GENERATE_LANDSCAPE,
 
 	/**
+	 * Expert settings for rainfall river generator (newgame); %Window numbers:
+	 *   - 0 = #RainfallOptions
+	 */
+	WC_RAINFALL_OPTIONS,
+
+ 	/**
+	 * Expert settings for town placement using the rainfall river generator (newgame); %Window numbers:
+	 *   - 0 = #TownRainfallOptions
+	 */
+	WC_TOWN_RAINFALL_OPTIONS,
+
+ 	/**
+	 * Town placer edit window, for adding / editing one particular configuration; %Window numbers:
+	 *   - 0 = #TownPlacerEdit
+	 */
+	WC_TOWN_PLACER_EDIT,
+
+	/**
 	 * Progress report of landscape generation; %Window numbers:
 	 *   - 0 = #GenerationProgressWidgets
 	 *   - 1 = #ScanProgressWidgets

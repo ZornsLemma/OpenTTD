@@ -19,7 +19,6 @@ void SQGSTestMode_Register(Squirrel *engine)
 {
 	DefSQClass<ScriptTestMode, ST_GS> SQGSTestMode("GSTestMode");
 	SQGSTestMode.PreRegister(engine);
-	SQGSTestMode.AddConstructor<void (ScriptTestMode::*)(), 1>(engine, "x");
 
 	SQGSTestMode.PostRegister(engine);
 }

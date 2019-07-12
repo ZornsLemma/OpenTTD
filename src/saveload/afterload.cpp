@@ -58,6 +58,7 @@
 #include "../disaster_vehicle.h"
 #include "../ship.h"
 #include "../water.h"
+#include "../rivers_rainfall.h"
 
 
 #include "saveload_internal.h"
@@ -543,6 +544,19 @@ static inline bool MayHaveBridgeAbove(TileIndex t)
  */
 bool AfterLoadGame()
 {
+	if (_number_of_lower_tiles != NULL) {
+		free(_number_of_lower_tiles);
+		_number_of_lower_tiles = NULL;
+	}
+	if (_water_flow != NULL) {
+		free(_water_flow);
+		_water_flow = NULL;
+	}
+	if (_water_info != NULL) {
+		free(_water_info);
+		_water_info = NULL;
+	}
+
 	SetSignalHandlers();
 
 	TileIndex map_size = MapSize();

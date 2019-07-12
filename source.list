@@ -43,6 +43,7 @@ hotkeys.cpp
 ini.cpp
 ini_load.cpp
 landscape.cpp
+landscape_util.cpp
 linkgraph/demands.cpp
 linkgraph/flowmapper.cpp
 linkgraph/linkgraph.cpp
@@ -67,7 +68,10 @@ order_backup.cpp
 pbs.cpp
 progress.cpp
 rail.cpp
+rainfall_options_gui.cpp
 rev.cpp
+rivers_path.cpp
+rivers_rainfall.cpp
 road.cpp
 roadstop.cpp
 screenshot.cpp
@@ -219,6 +223,7 @@ industry_type.h
 industrytype.h
 ini_type.h
 landscape.h
+landscape_util.h
 landscape_type.h
 language.h
 linkgraph/demands.h
@@ -302,6 +307,8 @@ rail.h
 rail_gui.h
 rail_type.h
 rev.h
+rivers_path.h
+rivers_rainfall.h
 road.h
 road_cmd.h
 road_func.h
@@ -353,6 +360,7 @@ subsidy_base.h
 subsidy_func.h
 subsidy_type.h
 tar_type.h
+terraform_func.h
 terraform_gui.h
 textbuf_gui.h
 textbuf_type.h
@@ -504,6 +512,7 @@ textfile_gui.cpp
 timetable_gui.cpp
 toolbar_gui.cpp
 town_gui.cpp
+town_rainfall_options_gui.cpp
 train_gui.cpp
 transparency_gui.cpp
 tree_gui.cpp

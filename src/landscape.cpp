@@ -30,11 +30,13 @@
 #include "core/random_func.hpp"
 #include "object_base.h"
 #include "company_func.h"
-#include "pathfinder/npf/aystar.h"
+// SFTODO: DELETE #include "pathfinder/npf/aystar.h"
 #include "saveload/saveload.h"
 #include "framerate_type.h"
-#include <list>
-#include <set>
+// SFTODO: DELETE #include <list>
+// SFTODO: DELETE #include <set>
+#include "rivers_path.h"
+#include "rivers_rainfall.h"
 
 #include "table/strings.h"
 #include "table/sprites.h"
@@ -1011,6 +1013,7 @@ static void CreateDesertOrRainForest()
 	}
 }
 
+#if 0 // SFTODO: DELETE
 /**
  * Find the spring of a river.
  * @param tile The tile to consider for being the spring.
@@ -1046,7 +1049,9 @@ static bool FindSpring(TileIndex tile, void *user_data)
 
 	return true;
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /**
  * Make a connected lake; fill all tiles in the circular tile search that are connected.
  * @param tile The tile to consider for lake making.
@@ -1072,7 +1077,9 @@ static bool MakeLake(TileIndex tile, void *user_data)
 
 	return false;
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /**
  * Check whether a river at begin could (logically) flow down to end.
  * @param begin The origin of the flow.
@@ -1094,25 +1101,33 @@ static bool FlowsDown(TileIndex begin, TileIndex end)
 			/* Slope continues, then it must be lower... or either end must be flat. */
 			((slopeEnd == slopeBegin && heightEnd < heightBegin) || slopeEnd == SLOPE_FLAT || slopeBegin == SLOPE_FLAT);
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /* AyStar callback for checking whether we reached our destination. */
 static int32 River_EndNodeCheck(const AyStar *aystar, const OpenListNode *current)
 {
 	return current->path.node.tile == *(TileIndex*)aystar->user_target ? AYSTAR_FOUND_END_NODE : AYSTAR_DONE;
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /* AyStar callback for getting the cost of the current node. */
 static int32 River_CalculateG(AyStar *aystar, AyStarNode *current, OpenListNode *parent)
 {
 	return 1 + RandomRange(_settings_game.game_creation.river_route_random);
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /* AyStar callback for getting the estimated cost to the destination. */
 static int32 River_CalculateH(AyStar *aystar, AyStarNode *current, OpenListNode *parent)
 {
 	return DistanceManhattan(*(TileIndex*)aystar->user_target, current->tile);
 }
+#endif
 
+#if 0 // SFTODO DELETE
 /* AyStar callback for getting the neighbouring nodes of the given node. */
 static void River_GetNeighbours(AyStar *aystar, OpenListNode *current)
 {
@@ -1128,7 +1143,9 @@ static void River_GetNeighbours(AyStar *aystar, OpenListNode *current)
 		}
 	}
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /* AyStar callback when an route has been found. */
 static void River_FoundEndNode(AyStar *aystar, OpenListNode *current)
 {
@@ -1141,9 +1158,13 @@ static void River_FoundEndNode(AyStar *aystar, OpenListNode *current)
 		}
 	}
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 static const uint RIVER_HASH_SIZE = 8; ///< The number of bits the hash for river finding should have.
+#endif
 
+#if 0 // SFTODO: DELETE
 /**
  * Simple hash function for river tiles to be used by AyStar.
  * @param tile The tile to hash.
@@ -1154,7 +1175,9 @@ static uint River_Hash(uint tile, uint dir)
 {
 	return GB(TileHash(TileX(tile), TileY(tile)), 0, RIVER_HASH_SIZE);
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /**
  * Actually build the river between the begin and end tiles using AyStar.
  * @param begin The begin of the river.
@@ -1179,7 +1202,9 @@ static void BuildRiver(TileIndex begin, TileIndex end)
 	finder.Main();
 	finder.Free();
 }
+#endif
 
+#if 0 // SFTODO: DELETE
 /**
  * Try to flow the river down from a given begin.
  * @param spring The springing point of the river.
@@ -1264,35 +1289,31 @@ static bool FlowRiver(TileIndex spring, TileIndex begin)
 	if (found) BuildRiver(begin, end);
 	return found;
 }
+#endif
 
 /**
  * Actually (try to) create some rivers.
  */
-static void CreateRivers()
+static bool CreateRivers()
 {
-	int amount = _settings_game.game_creation.amount_of_rivers;
-	if (amount == 0) return;
+	if (_settings_game.game_creation.amount_of_rivers > 0) {
+		RiverGenerator *river_generator;
+		int generator = _settings_game.game_creation.river_generator;
+		switch (generator) {
+			case RG_ORIGINAL: river_generator = new PathRiverGenerator(); break;
+			case RG_RAINFALL: river_generator = new RainfallRiverGenerator(); break;
+			default: NOT_REACHED();
+ 		}
 
-	uint wells = ScaleByMapSize(4 << _settings_game.game_creation.amount_of_rivers);
-	SetGeneratingWorldProgress(GWP_RIVER, wells + 256 / 64); // Include the tile loop calls below.
-
-	for (; wells != 0; wells--) {
-		IncreaseGeneratingWorldProgress(GWP_RIVER);
-		for (int tries = 0; tries < 128; tries++) {
-			TileIndex t = RandomTile();
-			if (!CircularTileSearch(&t, 8, FindSpring, nullptr)) continue;
-			if (FlowRiver(t, t)) break;
-		}
-	}
-
-	/* Run tile loop to update the ground density. */
-	for (uint i = 0; i != 256; i++) {
-		if (i % 64 == 0) IncreaseGeneratingWorldProgress(GWP_RIVER);
-		RunTileLoop();
-	}
+		bool towns_generated = river_generator->GenerateRivers();
+		delete river_generator;
+		return towns_generated;
+	} else {
+		return false;
+ 	}
 }
 
-void GenerateLandscape(byte mode)
+bool GenerateLandscape(byte mode)
 {
 	/** Number of steps of landscape generation */
 	enum GenLandscapeSteps {
@@ -1375,7 +1396,28 @@ void GenerateLandscape(byte mode)
 
 	if (_settings_game.game_creation.landscape == LT_TROPIC) CreateDesertOrRainForest();
 
-	CreateRivers();
+	if (_number_of_lower_tiles != NULL) {
+		free(_number_of_lower_tiles);
+		_number_of_lower_tiles = NULL;
+	}
+	if (_water_flow != NULL) {
+		free(_water_flow);
+		_water_flow = NULL;
+	}
+	if (_water_info != NULL) {
+		free(_water_info);
+		_water_info = NULL;
+	}
+	if (_river_map != NULL) {
+		free(_river_map);
+		_river_map = NULL;
+	}
+	if (_river_iteration != NULL) {
+		free(_river_iteration);
+		_river_iteration = NULL;
+	}
+
+	return CreateRivers();
 }
 
 void OnTick_Town();
