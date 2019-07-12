@@ -20,6 +20,7 @@
 #include "tile_type.h"
 
 #include "core/random_func.hpp"
+#include "pathfinder/npf/aystar.h"
 
 #include <algorithm>
 #include <map>
@@ -445,7 +446,26 @@ private:
 	int *CalculateNumberOfLowerTiles(NumberOfLowerHeightIterator *lower_iterator);
 	void RemoveSmallBasins(int *number_of_lower_tiles);
 
+	/* Background about the following three variables: The aystar implementation of OpenTTD unfortunately needs static callback functions,
+	 * instead of passing some object oriented interface implementation.  This river generator is implemented purely object oriented.
+     * Thus, somehow accessing the generator state from the callback functions of aystar does only work if that state is stored
+	 * in a static way.
+	 */
+	static std::vector<TileIndex>* found_path;
+	static std::set<TileIndex>* lake_tiles;
+
+	static int32 LakePathSearch_EndNodeCheck(AyStar *aystar, OpenListNode *current);
+	static int32 LakePathSearch_CalculateG(AyStar *aystar, AyStarNode *current, OpenListNode *parent);
+	static int32 LakePathSearch_CalculateH(AyStar *aystar, AyStarNode *current, OpenListNode *parent);
+	static void LakePathSearch_GetNeighbours(AyStar *aystar, OpenListNode *current);
+	static void LakePathSearch_FoundEndNode(AyStar *aystar, OpenListNode *current);
+
+	static const uint LAKE_HASH_SIZE = 8; ///< The number of bits the hash for lake path finding should have.
+	static uint LakePathSearch_Hash(uint tile, uint dir);
+
 public:
+	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles);
+
 	RainfallRiverGenerator() {}
 	virtual void GenerateRivers();
 };

@@ -22,6 +22,7 @@
 #include "water_map.h"
 
 #include "core/alloc_func.hpp"
+#include "core/mem_func.hpp"
 #include "core/random_func.hpp"
 
 #include "rivers_rainfall.h"
@@ -712,6 +713,93 @@ void RainfallRiverGenerator::RemoveSmallBasins(int *number_of_lower_tiles)
 			}
 		}
 	}
+}
+
+/* =================================================== */
+/* ============ Path finding inside lakes ============ */
+/* =================================================== */
+
+std::vector<TileIndex>* RainfallRiverGenerator::found_path;
+std::set<TileIndex>* RainfallRiverGenerator::lake_tiles;
+
+int32 RainfallRiverGenerator::LakePathSearch_EndNodeCheck(AyStar *aystar, OpenListNode *current)
+{
+	return current->path.node.tile == *(TileIndex*)aystar->user_target ? AYSTAR_FOUND_END_NODE : AYSTAR_DONE;
+}
+
+int32 RainfallRiverGenerator::LakePathSearch_CalculateG(AyStar *aystar, AyStarNode *current, OpenListNode *parent)
+{
+	return 1 + RandomRange(_settings_game.game_creation.river_route_random);
+}
+
+int32 RainfallRiverGenerator::LakePathSearch_CalculateH(AyStar *aystar, AyStarNode *current, OpenListNode *parent)
+{
+	return DistanceManhattan(*(TileIndex*)aystar->user_target, current->tile);
+}
+
+void RainfallRiverGenerator::LakePathSearch_GetNeighbours(AyStar *aystar, OpenListNode *current)
+{
+	TileIndex tile = current->path.node.tile;
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+	StoreStraightNeighborTiles(tile, neighbor_tiles);
+
+	aystar->num_neighbours = 0;
+	for (int n = DIR_BEGIN; n < DIR_END; n++) {
+		/* Only accept lake tiles, or the outflow tile.  Detect the outflow tile by checking user_target (it is in generally not part of the lake). */
+		if (neighbor_tiles[n] != INVALID_TILE && (RainfallRiverGenerator::lake_tiles->find(neighbor_tiles[n]) != RainfallRiverGenerator::lake_tiles->end()
+													|| neighbor_tiles[n] == *(TileIndex*)aystar->user_target)) {
+			aystar->neighbours[aystar->num_neighbours].tile = neighbor_tiles[n];
+			aystar->neighbours[aystar->num_neighbours].direction = INVALID_TRACKDIR;
+			aystar->num_neighbours++;
+		}
+	}
+}
+
+void RainfallRiverGenerator::LakePathSearch_FoundEndNode(AyStar *aystar, OpenListNode *current)
+{
+	for (PathNode *path = &current->path; path != NULL; path = path->parent) {
+		TileIndex tile = path->node.tile;
+		RainfallRiverGenerator::found_path->push_back(tile);
+	}
+}
+
+uint RainfallRiverGenerator::LakePathSearch_Hash(uint tile, uint dir)
+{
+	return GB(TileHash(TileX(tile), TileY(tile)), 0, RainfallRiverGenerator::LAKE_HASH_SIZE);
+}
+
+/** Given a set of tiles forming a lake, and a start and a end tile, this function calculates a path within the lake,
+ *  between the two tiles, and stores the result in the vector given by reference.
+ *  @return wether a path could be found
+ */
+bool RainfallRiverGenerator::CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles)
+{
+	RainfallRiverGenerator::found_path = &path_tiles;
+	RainfallRiverGenerator::lake_tiles = &lake_tiles;
+
+	AyStar finder;
+	MemSetT(&finder, 0);
+	finder.CalculateG = RainfallRiverGenerator::LakePathSearch_CalculateG;
+	finder.CalculateH = RainfallRiverGenerator::LakePathSearch_CalculateH;
+	finder.GetNeighbours = RainfallRiverGenerator::LakePathSearch_GetNeighbours;
+	finder.EndNodeCheck = RainfallRiverGenerator::LakePathSearch_EndNodeCheck;
+	finder.FoundEndNode = RainfallRiverGenerator::LakePathSearch_FoundEndNode;
+
+	/* Swap from_tile and to_tile, since the output path goes from dest to start, just the other way round
+	 * than one expects.
+	 */
+	finder.user_target = &from_tile;
+
+	finder.Init(RainfallRiverGenerator::LakePathSearch_Hash, 1 << RainfallRiverGenerator::LAKE_HASH_SIZE);
+
+	AyStarNode start;
+	start.tile = to_tile;
+	start.direction = INVALID_TRACKDIR;
+	finder.AddStartNode(&start, 0);
+	int result = finder.Main();
+	finder.Free();
+
+	return result == AYSTAR_FOUND_END_NODE;
 }
 
 /** The generator function.  The following steps are performed in this order when generating rivers:
