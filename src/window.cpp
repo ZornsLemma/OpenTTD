@@ -1291,12 +1291,12 @@ static uint GetWindowZPriority(const Window *w)
 
 		case WC_QUERY_STRING:
 		case WC_SEND_NETWORK_MSG:
+		case WC_ERRMSG:
 		    ++z_priority;
 
 		case WC_TOWN_PLACER_EDIT:
 			++z_priority;
 
-		case WC_ERRMSG:
 		case WC_CONFIRM_POPUP_QUERY:
 		case WC_MODAL_PROGRESS:
 		case WC_NETWORK_STATUS_WINDOW:

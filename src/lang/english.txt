@@ -1121,6 +1121,7 @@ STR_TPE_DESCRIPTION                                             :{BLACK}The chos
 STR_TPE_DESCRIPTION_TOOLTIP                                     :How the currently chosen town placer works
 STR_TPE_OK_BUTTON                                               :Ok
 STR_TPE_ABORT_BUTTON                                            :Abort
+STR_TPE_CHECK_ERROR                                             :Please choose a town placer, assign it a positive weight, and fill possible parameters.
 
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced

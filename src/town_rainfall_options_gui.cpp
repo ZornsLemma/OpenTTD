@@ -10,6 +10,7 @@
 /** @file rainfall_option_gui.cpp Expert GUI for configuring the rainfall river generator */
 
 #include "stdafx.h"
+#include "error.h"
 #include "gfx_func.h"
 #include "querystring_gui.h"
 #include "rivers_rainfall.h"
@@ -254,6 +255,69 @@ struct TownPlacerEditWindow : Window {
 				ShowDropDownList(this, BuildTownPlacerDropDown(this->town_placers), selected_index, WID_TPE_TOWN_PLACER_DROPDOWN);
 				break;
 			}
+
+			case WID_TPE_OK_BUTTON: {
+				/* Check if the user entered a weight value, and if yes, parse it and store it in the config struct. */
+				this->config.weight = -1;
+				const char* weight_input = this->querystrings[WID_TPE_WEIGHT_TEXTBOX]->GetText();
+				if (!StrEmpty(weight_input)) {
+					this->config.weight = atoi(weight_input);
+				}
+
+				/* Check wether the user chose a town placer in the dropdown, if yes, parse its entered parameter values (if any) */
+				TownPlacer *placer = (this->town_placer_index >= 0 ? this->town_placers[this->town_placer_index] : NULL);
+				if (placer != NULL) {
+					this->config.town_placer = placer->GetKey();
+
+					/* The entered parameter values */
+					this->config.parameter_map = std::map<int, int>();
+
+					/* The defined parameters.  All must get a value, we initialize them with default values on opening the window, and
+					 * if a user clears such a textbox without entering another value, an error message is the result
+					 */
+					std::map<int, TownPlacerParameter> parameters = placer->GetParameters();
+					int widget_offset = 0;
+					for (std::map<int, TownPlacerParameter>::const_iterator it2 = parameters.begin(); it2 != parameters.end(); it2++) {
+						// The unique parameter index of this parameter within the corresponding town placer.
+						int parameter_index = it2->first;
+						TownPlacerParameter parameter = it2->second;
+						int querystring_index = placer_index_to_first_widget_id[this->town_placer_index] + widget_offset;
+
+						/* If no parameter value was entered, record -1; negative values will result in an error message below. */
+						this->config.parameter_map[parameter_index] = -1;
+						const char* input = this->querystrings[querystring_index]->GetText();
+						if (!StrEmpty(input)) {
+							int entered_value = atoi(input);
+							if (entered_value >= parameter.GetMinValue() && entered_value <= parameter.GetMaxValue()) {
+								this->config.parameter_map[parameter_index] = atoi(input);
+							}
+						}
+						widget_offset++;
+					}
+				}
+
+				/* Show an error, if (a) no placer was chosen in dropdown, or (b) no positive weight was entered, or (c) at least one parameter
+				 * textbox wasn´t filled.  In all those cases, leave the window open, the user should have the chance to correct the mistake.
+				 */
+				bool show_error = (placer == NULL || this->config.weight <= 0);
+				for (std::map<int,int>::const_iterator it = this->config.parameter_map.begin(); it != this->config.parameter_map.end(); it++) {
+					int parameter_value = it->second;
+					show_error |= (parameter_value < 0);
+				}
+
+				if (show_error) {
+					ShowErrorMessage(STR_TPE_CHECK_ERROR, STR_EMPTY, WL_INFO);
+				} else {
+					/* Everything fine, call the callback, the parent window will process the added / edited config */
+					this->callback(this->parent, this->phase, this->config);
+					delete this;
+				}
+				break;
+			}
+
+			case WID_TPE_ABORT_BUTTON:
+				delete this;
+				break;
 		}
 	}
 
