@@ -354,3 +354,9 @@ void GenerateWorld(GenWorldMode mode, uint size_x, uint size_y, bool reset_setti
 		ScrollMainWindowToTile(TileXY(MapSizeX() / 2, MapSizeY() / 2), true);
 	}
 }
+
+std::vector<TownPlacer*> GetAllTownPlacers()
+{
+	std::vector<TownPlacer*> town_placers = std::vector<TownPlacer*>();
+	return town_placers;
+}

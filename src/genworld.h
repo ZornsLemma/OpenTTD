@@ -13,6 +13,10 @@
 #define GENWORLD_H
 
 #include "company_type.h"
+#include "map_func.h"
+#include "strings_type.h"
+#include <map>
+#include <vector>
 
 /** Constants related to world generation */
 enum LandscapeGenerator {
@@ -131,5 +135,111 @@ public:
 
 	virtual void GenerateRivers() = 0;
 };
+
+/** Definition of a parameter for a town placer.
+ */
+struct TownPlacerParameter {
+	StringID name;
+	StringID tooltip;
+	int min_value;
+	int max_value;
+	int default_value;
+
+	TownPlacerParameter() {}
+	TownPlacerParameter(const TownPlacerParameter &other) { this->name = other.name; this->tooltip = other.tooltip; this->min_value = other.min_value; this->max_value = other.max_value;
+													  this->default_value = other.default_value; }
+	TownPlacerParameter(StringID name, StringID tooltip, int min_value, int max_value, int default_value)
+				  : name(name), tooltip(tooltip), min_value(min_value), max_value(max_value), default_value(default_value) {}
+
+	inline StringID GetName() { return this->name; }
+	inline StringID GetTooltip() { return this->tooltip; }
+	inline int GetMinValue() { return this->min_value; }
+	inline int GetMaxValue() { return this->max_value; }
+	inline int GetDefaultValue() { return this->default_value; }
+};
+
+/** Town related score for a rectangular section of the map, e.g. a 16x16 grid.
+ */
+struct TownScore {
+
+};
+
+typedef int TownGridIndex;
+
+static const uint TOWN_GRID_SIZE = 16;
+static const uint TOWN_GRID_LOG = 4;
+
+inline TownGridIndex TownGridXY(uint x, uint y) { return y * (MapSizeX() / TOWN_GRID_SIZE) + x; }
+inline uint TownGridX(TownGridIndex c) { return c % (MapSizeX() / TOWN_GRID_SIZE); }
+inline uint TownGridY(TownGridIndex c) { return c / (MapSizeX() / TOWN_GRID_SIZE); }
+inline uint GetNumberOfTownGrids() { return (MapSizeX() * MapSizeY()) / (TOWN_GRID_SIZE * TOWN_GRID_SIZE); }
+
+/** Unique keys for TownPlacers.  Used when (de)serializing the config, and for communication between the GUI components.
+ */
+enum TownPlacerKey {
+	TPK_INVALID = -1,           ///< Constant for "None chosen"
+};
+
+/** A TownPlacer evaluates positions for founding a town or town.  Its job is not finding out wether
+ *  a particular position is valid for a town or city, but wether the algorithm should found a town or
+ *  city on a valid position.
+ */
+struct TownPlacer {
+
+protected:
+	TownPlacerKey key;
+	std::map<int, TownPlacerParameter> parameters;
+	StringID name;
+	StringID description;
+
+public:
+	TownPlacer() { this->parameters = std::map<int, TownPlacerParameter>(); }
+	virtual ~TownPlacer() {}
+
+	/** Returns the unique key of this town placer.  As it will be serialized to the config, it may not be changed. */
+	TownPlacerKey GetKey() { return this->key; }
+
+	/** Returns a map with all parameters of this town placer.  Parameters are identified by the indices used as keys in this map.  */
+	std::map<int, TownPlacerParameter> GetParameters() { return this->parameters; }
+
+	/** Returns the name of the TownPlacer, as it is displayed e.g. in drop downs. */
+	StringID GetName() { return this->name; }
+
+	/** Returns a description of the TownPlacer, explaining what´s its motivation, and how it might be used. */
+	StringID GetDescription() { return this->description; }
+
+	/** Given a TownGridIndex and corresponding score, should we try to found a town somewhere in this grid section?
+	 */
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters) = 0;
+
+	/** Given a TileIndex within a town grid section, should we found a town there?
+	 */
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) = 0;
+};
+
+/** Configuration for using a TownPlacer.
+ */
+struct TownPlacerConfig {
+	/** Which town placer to use */
+	TownPlacerKey town_placer;
+
+	/** With which weight (this weight, divided by the sum of all weights of all town placers, gives the probability to use it) */
+	int weight;
+
+	/** Optionally, with which town placer specific parameters.  The keys of the map are constants, unique within a town placer class.  Something like MIN_FLOW. */
+	std::map<int, int> parameter_map;
+};
+
+/** Towns and cities are placed in (currently) two phases: First the cities, and then the towns.
+ *  The reason to do so is, that the cities should get the chance to choose their locations freely,
+ *  before the towns can occupy the good positions on map.
+ */
+enum TownPlacerPhase {
+	TPP_INVALID_PHASE = -1,
+	TPP_PHASE_ONE_CITY = 0,
+	TPP_PHASE_TWO_TOWN = 1
+};
+
+std::vector<TownPlacer*> GetAllTownPlacers();
 
 #endif /* GENWORLD_H */
