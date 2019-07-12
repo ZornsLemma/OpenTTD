@@ -358,5 +358,13 @@ void GenerateWorld(GenWorldMode mode, uint size_x, uint size_y, bool reset_setti
 std::vector<TownPlacer*> GetAllTownPlacers()
 {
 	std::vector<TownPlacer*> town_placers = std::vector<TownPlacer*>();
+	town_placers.push_back(new HugeRiverTownPlacer());
+	town_placers.push_back(new SmallRiverTownPlacer());
+	town_placers.push_back(new RiverBranchTownPlacer());
+	town_placers.push_back(new LakeTownPlacer());
+	town_placers.push_back(new CoastPlacer());
+	town_placers.push_back(new FlatLandPlacer());
+	town_placers.push_back(new MountainTownPlacer());
+	town_placers.push_back(new ValleyTownPlacer());
 	return town_placers;
 }

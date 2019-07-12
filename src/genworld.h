@@ -15,6 +15,8 @@
 #include "company_type.h"
 #include "map_func.h"
 #include "strings_type.h"
+#include "tile_map.h"
+#include "table/strings.h"
 #include <map>
 #include <vector>
 
@@ -236,6 +238,14 @@ inline uint GetNumberOfTownGrids() { return (MapSizeX() * MapSizeY()) / (TOWN_GR
  */
 enum TownPlacerKey {
 	TPK_INVALID = -1,           ///< Constant for "None chosen"
+	TPK_HUGE = 0,
+	TPK_SMALL = 1,
+	TPK_BRANCH = 2,
+	TPK_LAKE = 3,
+	TPK_COAST = 4,
+	TPK_FLAT = 5,
+	TPK_MOUNTAIN = 6,
+	TPK_VALLEY = 7,
 };
 
 /** A TownPlacer evaluates positions for founding a town or town.  Its job is not finding out wether
@@ -296,6 +306,206 @@ enum TownPlacerPhase {
 	TPP_INVALID_PHASE = -1,
 	TPP_PHASE_ONE_CITY = 0,
 	TPP_PHASE_TWO_TOWN = 1
+};
+
+struct HugeRiverTownPlacer : public TownPlacer {
+public:
+	static const int MIN_FLOW_PARAMETER = 0;
+
+	HugeRiverTownPlacer() : TownPlacer()
+	{
+		this->key = TPK_HUGE;
+		this->name = STR_TOWN_PLACER_HUGE_RIVER_NAME;
+		this->description = STR_TOWN_PLACER_HUGE_RIVER_DESC;
+
+		/* Why do I copy the constant into a separate variable?  Because of the following linker error:
+		 * genworld.o: In function `_Head_base':
+		 * /usr/include/c++/4.8/tuple:134: undefined reference to `HugeRiverTownPlacer::MIN_FLOW_PARAMETER'
+		 * Probably somehow caused by the way the type parameter of the std::map is processed.
+		 * ... If I make MIN_FLOW_PARAMETER only const and not static const, my compiler succeeds.
+	     *     Unfortunately, const members with initialization as above are forbidden before compiler version 4.7
+		 *     - at other places of code, I already got bugreports because of that.
+		 */
+		int MIN_FLOW_INDEX = HugeRiverTownPlacer::MIN_FLOW_PARAMETER;
+		this->parameters[MIN_FLOW_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MIN_FLOW, STR_TOWN_PLACER_MIN_FLOW_TOOLTIP, 0, 1000, 300);
+	}
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters)
+	{
+		int MIN_FLOW_INDEX = HugeRiverTownPlacer::MIN_FLOW_PARAMETER;
+		return score->river_size_score >= parameters[MIN_FLOW_INDEX];
+	}
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters)
+	{
+		return score->average_height != -1 && TileHeight(tile) < (uint)score->average_height / 1000;
+	}
+};
+
+
+struct SmallRiverTownPlacer : public TownPlacer {
+public:
+	static const int MIN_FLOW_PARAMETER = 0;
+	static const int MAX_FLOW_PARAMETER = 1;
+
+	SmallRiverTownPlacer() : TownPlacer()
+	{
+		this->key = TPK_SMALL;
+		this->name = STR_TOWN_PLACER_SMALL_RIVER_NAME;
+		this->description = STR_TOWN_PLACER_SMALL_RIVER_DESC;
+
+		int MIN_FLOW_INDEX = SmallRiverTownPlacer::MIN_FLOW_PARAMETER;
+		int MAX_FLOW_INDEX = SmallRiverTownPlacer::MAX_FLOW_PARAMETER;
+		this->parameters[MIN_FLOW_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MIN_FLOW, STR_TOWN_PLACER_MIN_FLOW_TOOLTIP, 0, 1000, 1);
+		this->parameters[MAX_FLOW_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MAX_FLOW, STR_TOWN_PLACER_MAX_FLOW_TOOLTIP, 0, 1000, 300);
+	}
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters)
+	{
+		int MIN_FLOW_INDEX = SmallRiverTownPlacer::MIN_FLOW_PARAMETER;
+		int MAX_FLOW_INDEX = SmallRiverTownPlacer::MAX_FLOW_PARAMETER;
+		return score->river_size_score >= parameters[MIN_FLOW_INDEX] && score->river_size_score <= parameters[MAX_FLOW_INDEX];
+	}
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) {
+		return score->average_height != -1 && TileHeight(tile) < (uint)score->average_height / 1000;
+	}
+};
+
+struct RiverBranchTownPlacer : public TownPlacer {
+public:
+	static const int MIN_BRANCH_PARAMETER = 0;
+
+	RiverBranchTownPlacer() : TownPlacer()
+	{
+		this->key = TPK_BRANCH;
+		this->name = STR_TOWN_PLACER_RIVER_BRANCH_NAME;
+		this->description = STR_TOWN_PLACER_RIVER_BRANCH_DESC;
+
+		int MIN_BRANCH_INDEX = RiverBranchTownPlacer::MIN_BRANCH_PARAMETER;
+		this->parameters[MIN_BRANCH_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MIN_BRANCH, STR_TOWN_PLACER_MIN_BRANCH_TOOLTIP, 0, 1000, 200);
+	}
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters)
+	{
+		int MIN_BRANCH_INDEX = RiverBranchTownPlacer::MIN_BRANCH_PARAMETER;
+		return score->river_branch_score >= parameters[MIN_BRANCH_INDEX];
+	}
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) { return TileHeight(tile) < _settings_game.construction.max_heightlevel / 3; }
+};
+
+
+
+struct LakeTownPlacer : public TownPlacer {
+public:
+	static const int MIN_LAKE_PARAMETER = 0;
+
+	LakeTownPlacer() : TownPlacer()
+	{
+		this->key = TPK_LAKE;
+		this->name = STR_TOWN_PLACER_LAKE_NAME;
+		this->description = STR_TOWN_PLACER_LAKE_DESC;
+
+		int MIN_LAKE_INDEX = LakeTownPlacer::MIN_LAKE_PARAMETER;
+		this->parameters[MIN_LAKE_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MIN_LAKE_AMOUNT, STR_TOWN_PLACER_MIN_LAKE_AMOUNT_TOOLTIP, 0, 1000, 150);
+	}
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters)
+	{
+		int MIN_LAKE_INDEX = LakeTownPlacer::MIN_LAKE_PARAMETER;
+		return score->lake_amount_score >= parameters[MIN_LAKE_INDEX] && score->lake_amount_score < 900 && score->max_lake_size > (int)MapSize() / 2000;
+	}
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) { return true; }
+};
+
+struct CoastPlacer : public TownPlacer {
+public:
+	static const int MIN_OCEAN_PARAMETER = 0;
+
+	CoastPlacer() : TownPlacer()
+	{
+		this->key = TPK_COAST;
+		this->name = STR_TOWN_PLACER_COAST_NAME;
+		this->description = STR_TOWN_PLACER_COAST_DESC;
+
+		int MIN_OCEAN_INDEX = CoastPlacer::MIN_OCEAN_PARAMETER;
+		this->parameters[MIN_OCEAN_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MIN_OCEAN_AMOUNT, STR_TOWN_PLACER_MIN_OCEAN_AMOUNT_TOOLTIP, 0, 1000, 200);
+	}
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters)
+	{
+		int MIN_OCEAN_INDEX = CoastPlacer::MIN_OCEAN_PARAMETER;
+		return score->ocean_amount_score >= parameters[MIN_OCEAN_INDEX] && score->ocean_amount_score < 900;
+	}
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) { return true; }
+};
+
+struct FlatLandPlacer : public TownPlacer {
+public:
+	static const int MIN_FLAT_PARAMETER = 0;
+
+	FlatLandPlacer() : TownPlacer()
+	{
+		this->key = TPK_FLAT;
+		this->name = STR_TOWN_PLACER_FLAT_NAME;
+		this->description = STR_TOWN_PLACER_FLAT_DESC;
+
+		int MIN_FLAT_INDEX = FlatLandPlacer::MIN_FLAT_PARAMETER;
+		this->parameters[MIN_FLAT_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MIN_FLAT_AMOUNT, STR_TOWN_PLACER_MIN_FLAT_AMOUNT_TOOLTIP, 0, 1000, 400);
+	}
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters)
+	{
+		int MIN_FLAT_INDEX = FlatLandPlacer::MIN_FLAT_PARAMETER;
+		return score->flat_score >= parameters[MIN_FLAT_INDEX];
+	}
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) { return true; }
+};
+
+struct MountainTownPlacer : public TownPlacer {
+public:
+	static const int MIN_HEIGHT_PARAMETER = 0;
+
+	MountainTownPlacer() : TownPlacer()
+	{
+		this->key = TPK_MOUNTAIN;
+		this->name = STR_TOWN_PLACER_MOUNTAIN_NAME;
+		this->description = STR_TOWN_PLACER_MOUNTAIN_DESC;
+
+		int MIN_HEIGHT_INDEX = MountainTownPlacer::MIN_HEIGHT_PARAMETER;
+		this->parameters[MIN_HEIGHT_INDEX] = TownPlacerParameter(STR_TOWN_PLACER_MIN_HEIGHT, STR_TOWN_PLACER_MIN_HEIGHT_TOOLTIP, 0, 1000, 333);
+	}
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters)
+	{
+		int MIN_HEIGHT_INDEX = MountainTownPlacer::MIN_HEIGHT_PARAMETER;
+		return score->min_height >= (parameters[MIN_HEIGHT_INDEX] * _settings_game.construction.max_heightlevel) / 1000;
+	}
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters)
+	{
+		return TileHeight(tile) < (uint)(score->min_height + ((score->max_height - score->min_height) * 3) / 4);
+	}
+};
+
+struct ValleyTownPlacer : public TownPlacer {
+public:
+	ValleyTownPlacer() : TownPlacer()
+	{
+		this->key = TPK_VALLEY;
+		this->name = STR_TOWN_PLACER_VALLEY_NAME;
+		this->description = STR_TOWN_PLACER_VALLEY_DESC;
+	}
+
+	virtual bool PlaceInGridSection(TownGridIndex c, TownScore *score, std::map<int, int> &parameters) { return score->max_height - score->min_height > 8; }
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters)
+	{
+		bool all_higher = true;
+		int ref_height = TileHeight(tile);
+		int tx = (int)TileX(tile);
+		int ty = (int)TileY(tile);
+		for (int x = tx - 5; x < tx + 5; x++) {
+			for (int y = ty - 5; y < ty + 5; y++) {
+				if (x >= 1 && y >= 1 && x < (int)MapMaxX() - 1 && y < (int)MapMaxY() - 1) {
+					if ((int)TileHeight(TileXY(x, y)) < ref_height - 3) {
+						all_higher = false;
+						return false;
+					}
+				}
+			}
+		}
+		return all_higher;
+	}
 };
 
 std::vector<TownPlacer*> GetAllTownPlacers();

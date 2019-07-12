@@ -2890,6 +2890,39 @@ STR_RAINFALL_LAKE_MAXIMUM_SIZE_LABEL                            :{BLACK}Maximum 
 STR_RAINFALL_LAKE_ISLAND_MAX_SIZE_QUERY_CAPT                         :{BLACK}Enter the maximum size for one step of island generation
 STR_RAINFALL_LAKE_SHORE_MAX_SIZE_QUERY_CAPT                          :{BLACK}Enter the maximum size for one step of shore generation
 
+# Town placers
+STR_TOWN_PLACER_HUGE_RIVER_NAME                                 :Huge River
+STR_TOWN_PLACER_HUGE_RIVER_DESC                                 :If the flow of the biggest river in a grid section is higher than the given fraction of the maximum flow in the neighborhood, this placer may place a town/city.  Neighborhood means something like five grid sections into each direction.
+STR_TOWN_PLACER_SMALL_RIVER_NAME                                :Small River
+STR_TOWN_PLACER_SMALL_RIVER_DESC                                :If the flow of the biggest river in a grid section is within the given bound, this placer may place a town/city.  The bound consists of the two given fractions of the biggest flow in the neighborhood. Neighborhood means something like five grid sections into each direction.
+STR_TOWN_PLACER_RIVER_BRANCH_NAME                               :River Branch
+STR_TOWN_PLACER_RIVER_BRANCH_DESC                               : The aim of this placer is placing towns only at grid sections where big rivers meet.  Imagine two rivers merging at some tile.  Divide the flow of the smaller river by the flow of the bigger river.  Keep the result, and divide the flow of the merged river by the maximum flow in the neighborhood.  Multiply both calculated numbers, finally multiply that result by 1000.  Example: River Foo has flow 10000, river Bar has flow 20000.  The biggest flow in the neighborhood is 50000.  Then the river branch index is (10000 / 20000) * (30000 / 50000) * 1000 = 300.
+STR_TOWN_PLACER_LAKE_NAME                                       :Lake
+STR_TOWN_PLACER_LAKE_DESC                                       :If the fraction of lake tiles in a grid section is above the given value, and the total size of the lake is sufficiently big, this placer may place a town/city.
+STR_TOWN_PLACER_COAST_NAME                                      :Coast
+STR_TOWN_PLACER_COAST_DESC                                      :If the fraction of ocean tiles in a grid section is above the given value, this placer may place a town/city.
+STR_TOWN_PLACER_FLAT_NAME                                       :Flat land
+STR_TOWN_PLACER_FLAT_DESC                                       :If the fraction of flat tiles in a grid section is above the given value, this placer may place a town/city.
+STR_TOWN_PLACER_MOUNTAIN_NAME                                   :Mountain
+STR_TOWN_PLACER_MOUNTAIN_DESC                                   :If the lowest tile in a grid section is above the given fraction of the maximum height on map, this placer may place a town there.  It additionally keeps track that the town is not placed at the highest point of the grid section.
+STR_TOWN_PLACER_VALLEY_NAME                                     :Valley
+STR_TOWN_PLACER_VALLEY_DESC                                     :Places towns at positions that are somewhat low with respect to their direct neighborhood, i.e. (hopefully) in valleys.
+
+STR_TOWN_PLACER_MIN_FLOW                                        :{BLACK}Minimum flow (scaled)
+STR_TOWN_PLACER_MIN_FLOW_TOOLTIP                                :{BLACK}(Rectangular) regions of the map are suitable for placing a town with this placer, if they have at least this flow, compared with their neighborhood.  Example: 500 means half the maximum flow in the neighborhood.
+STR_TOWN_PLACER_MAX_FLOW                                        :{BLACK}Maximum flow (scaled)
+STR_TOWN_PLACER_MAX_FLOW_TOOLTIP                                :{BLACK}(Rectangular) regions of the map are suitable for placing a town with this placer, if they have at most this flow, compared with their neighborhood.  Example: 500 means half the maximum flow in the neighborhood.
+STR_TOWN_PLACER_MIN_BRANCH                                      :{BLACK}Minimum branch index
+STR_TOWN_PLACER_MIN_BRANCH_TOOLTIP                              :{BLACK}The more flow two merging rivers have, and the more similar their flow is (e.g. both are big), the bigger the river branch index is.  Example: The maximum flow in the neighborhood is 50000, the rivers have 20000 and 10000 flow, then the branch index is (10000 / 20000) * (20000 / 50000) = 200 (scaled to a range 0..1000)
+STR_TOWN_PLACER_MIN_LAKE_AMOUNT                                 :{BLACK}Minimum lake amount
+STR_TOWN_PLACER_MIN_LAKE_AMOUNT_TOOLTIP                         :{BLACK}The amount of lake in a grid section, scaled to 0..1000
+STR_TOWN_PLACER_MIN_OCEAN_AMOUNT                                :{BLACK}Minimum ocean amount
+STR_TOWN_PLACER_MIN_OCEAN_AMOUNT_TOOLTIP                        :{BLACK}The minimum amount of ocean in a grid section, scaled to 0..1000
+STR_TOWN_PLACER_MIN_FLAT_AMOUNT                                 :{BLACK}Minimum amount of flat tiles
+STR_TOWN_PLACER_MIN_FLAT_AMOUNT_TOOLTIP                         :{BLACK}The minimum amount of flat tiles in a grid section, scaled to 0..1000
+STR_TOWN_PLACER_MIN_HEIGHT                                      :{BLACK}Minimum height
+STR_TOWN_PLACER_MIN_HEIGHT_TOOLTIP                              :{BLACK}The minimum height in a grid section, compared with the maximum allowed height on map, scaled to 0..1000. Example: Max allowed height 60, the placer should place towns only above height 20, you need 333 for this setting.
+
 # Map generation progress
 STR_GENERATION_WORLD                                            :{WHITE}Generating World...
 STR_GENERATION_ABORT                                            :{BLACK}Abort
