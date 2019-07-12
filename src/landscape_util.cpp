@@ -231,6 +231,11 @@ void HeightLevelIterator::Calculate(int heightlevel)
 /*============================ Inspecting the neighborhood of tiles ================================*/
 /*=================================================================================================*/
 
+Direction GetOppositeDirection(Direction direction_index)
+{
+	return (Direction)((direction_index + 4) % DIR_COUNT);
+}
+
 /** Stores the TileIndex of all straight neighbor tiles of the given tile into the given TileIndex array,
  *  at the indices given by enum Direction.  If a tile doesn´t exist, since it is beyond the map edge,
  *  INVALID_TILE is stored.

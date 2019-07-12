@@ -14,7 +14,9 @@
 
 #include "direction_type.h"
 #include "map_func.h"
+#include "slope_func.h"
 #include "slope_type.h"
+#include "tile_map.h"
 #include "debug.h"
 
 #include <set>
@@ -129,11 +131,19 @@ struct TileWithValue {
 		this->value = value;
 	}
 
+	bool operator < (const TileWithValue& other) const
+	{
+        return (this->value < other.value);
+	}
+
 	bool operator > (const TileWithValue& other) const
     {
         return (this->value > other.value);
     }
 };
+
+Direction GetOppositeDirection(Direction direction_index);
+
 #define EMPTY_NEIGHBOR_TILES { INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE }
 
 void StoreStraightNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
@@ -143,6 +153,10 @@ void StoreSlopes(TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_
 void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[DIR_COUNT]);
 
 const char* SlopeToString(Slope slope);
+
+inline bool IsValidSlopeForRiver(Slope s) { return s == SLOPE_FLAT || IsInclinedSlope(s); }
+inline bool IsTileSuitableForRiver(TileIndex tile) { return IsValidSlopeForRiver(GetTileSlope(tile)); }
+
 void DebugTileInfo(int level, TileIndex tile, Slope slope, int height, TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT]);
 
 /** This class provides functionality for determining a connected component on the map.

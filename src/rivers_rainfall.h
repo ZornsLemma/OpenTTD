@@ -16,6 +16,7 @@
 #include "landscape_util.h"
 #include "slope_func.h"
 #include "slope_type.h"
+#include "terraform_func.h"
 #include "tile_map.h"
 #include "tile_type.h"
 
@@ -115,6 +116,8 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_CONSUME_LAKES_LOG_LEVEL 9
 #define RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL 9
 #define RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL 9
+#define RAINFALL_FINETUNE_TILES_SUMMARY_LOG_LEVEL 9
+#define RAINFALL_FINETUNE_TILES_FULL_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -302,6 +305,13 @@ inline void SetWaterType(byte *water_info, TileIndex tile, WaterType water_type)
 TileIndex AddFlowDirectionToTile(TileIndex tile, byte water_info);
 byte GetWaterInfoDirection(TileIndex source, TileIndex dest);
 
+/** Returns the flow direction at the given tile.
+ *  @param water_info water info array
+ *  @param tile some tile
+ *  @return flow direction
+ */
+inline Direction GetFlowDirection(byte *water_info, TileIndex tile) { return (Direction)GB(water_info[tile], 0, 3); }
+
 /** Returns what the algorithm wants to do with some tile.  This includes kind of water and flow direction; not the flow itself.
  *  @param water_info array
  *  @param tile some tile
@@ -320,6 +330,12 @@ inline void SetWaterInfo(byte *water_info, TileIndex tile, byte value) { water_i
  *  @return wether the given tiles is not declared to become any water.
  */
 inline bool IsNoWater(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_NONE; }
+
+/** Declares the given tile no water.
+ *  @param water_info water info array
+ *  @param tile some tile
+ */
+inline void DeclareNoWater(byte *water_info, TileIndex tile) { SetWaterType(water_info, tile, WI_NONE); }
 
 /** Declares the given tile an active lake center.
  *  @param water_info array
@@ -395,6 +411,7 @@ inline bool IsRiver(byte *water_info, TileIndex tile) { return GetWaterType(wate
 inline bool IsWaterTile(byte *water_info, TileIndex tile) { return IsRiver(water_info, tile) || IsLakeCenter(water_info, tile) || IsOrdinaryLakeTile(water_info, tile); }
 
 inline void MarkProcessed(byte *water_info, TileIndex tile) { SetBit(water_info[tile], 7); }
+inline void MarkNotProcessed(byte *water_info, TileIndex tile) { ClrBit(water_info[tile], 7); }
 inline bool WasProcessed(byte *water_info, TileIndex tile) { return GB(water_info[tile], 7, 1); }
 
 /** This HeightLevelIterator is responsible for calculating the flow.  Flow is meant to flow from higher towards
@@ -801,6 +818,15 @@ struct TileWithHeightAndFlow {
     }
 };
 
+struct TileWithTerraformerState {
+	TileIndex tile;
+	TerraformerState terraformer_state;
+	std::set<TileIndex> processed_tiles;
+
+	TileWithTerraformerState(TileIndex tile, TerraformerState terraformer_state, std::set<TileIndex> processed_tiles) : tile(tile),
+									terraformer_state(terraformer_state), processed_tiles(processed_tiles) {}
+};
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,
@@ -852,6 +878,14 @@ private:
 	void PrepareRiversAndLakes(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithValue> &extra_river_tiles);
 	void AddExtraRiverTilesToWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::vector<TileWithValue> &extra_river_tiles);
 	void GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, byte *water_info);
+
+	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
+	bool IsInclinedSlopePossible(TileIndex tile, TileIndex water_neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info, Direction direction, Slope slope, Slope desired_slope, int min_diagonal_height,
+								 Direction neighbor_direction_one, Direction neighbor_direction_two, Direction diagonal_direction_one, Direction diagonal_direction_two);
+	void RegisterTilesAffectedByTerraforming(TerraformerState &terraformer_state, std::set<TileIndex> &affected_tiles, byte *water_info, int min_height, bool only_processed_tiles = true);
+	void LowerTileForDiagonalWater(std::set<TileIndex> &problem_tiles, TileIndex tile, byte *water_info, int x_offset, int y_offset, std::set<TileIndex> &affected_tiles);
+	void LowerHigherWaterTilesUntilValid(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
+	void FineTuneTilesForWater(int *water_flow, byte *water_info, std::vector<TileWithHeightAndFlow> &water_tiles, DefineLakesIterator *define_lakes_iterator);
 
 public:
 	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);
