@@ -1087,6 +1087,7 @@ STR_RIVERS_CONSUMED_LAKE_CENTER                                 :Consumed Lake C
 STR_RIVERS_RIVER                                                :River
 STR_RIVERS_WATER                                                :Water
 STR_RIVERS_ESSENTIAL_LAKE_TILE                                  :Essential lake tile
+STR_RIVERS_RIVER_INFO                                           :{BLACK} River {LTBLUE}{COMMA}{BLACK}, Iteration {LTBLUE}{COMMA}
 
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced

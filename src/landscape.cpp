@@ -1047,6 +1047,14 @@ void GenerateLandscape(byte mode)
 		free(_water_info);
 		_water_info = NULL;
 	}
+	if (_river_map != NULL) {
+		free(_river_map);
+		_river_map = NULL;
+	}
+	if (_river_iteration != NULL) {
+		free(_river_iteration);
+		_river_iteration = NULL;
+	}
 
 	CreateRivers();
 }

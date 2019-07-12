@@ -267,6 +267,14 @@ public:
 			}
 		}
 
+		/* Debugging: River id and iteration */
+		if (_river_map != NULL && _river_iteration != NULL) {
+			SetDParam(0, _river_map[tile]);
+			SetDParam(1, _river_iteration[tile]);
+			GetString(this->landinfo_data[line_nr], STR_RIVERS_RIVER_INFO, lastof(this->landinfo_data[line_nr]));
+			line_nr++;
+		}
+
 		/* Local authority */
 		SetDParam(0, STR_LAND_AREA_INFORMATION_LOCAL_AUTHORITY_NONE);
 		if (t != NULL) {

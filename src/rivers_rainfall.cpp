@@ -38,6 +38,8 @@
 int *_number_of_lower_tiles = NULL;
 int *_water_flow = NULL;
 byte *_water_info = NULL;
+int *_river_map = NULL;
+int *_river_iteration = NULL;
 
 /* ================================================================================================================== */
 /* ============================ BasinConnectedComponentCalculator =================================================== */
@@ -5329,6 +5331,14 @@ void RainfallRiverGenerator::GenerateRivers()
 		free(_water_info);
 		_water_info = NULL;
 	}
+	if (_river_map != NULL) {
+		free(_river_map);
+		_river_map = NULL;
+	}
+	if (_river_iteration != NULL) {
+		free(_river_iteration);
+		_river_iteration = NULL;
+	}
 
 	_number_of_lower_tiles = CallocT<int>(MapSizeX() * MapSizeY());
 	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
@@ -5342,6 +5352,15 @@ void RainfallRiverGenerator::GenerateRivers()
 	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
 		_water_info[n] = water_info[n];
 	}
+	_river_map = CallocT<int>(MapSizeX() * MapSizeY());
+	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
+		_river_map[n] = river_map[n];
+	}
+	_river_iteration = CallocT<int>(MapSizeX() * MapSizeY());
+	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
+		_river_iteration[n] = river_iteration[n];
+	}
+
 
 	/*** (Debugging code end ***/
 
