@@ -1105,6 +1105,8 @@ STR_TP_RAINFALL_EDIT_BUTTON_CAPTION                             :{BLACK}Edit
 STR_TP_RAINFALL_EDIT_BUTTON_TOOLTIP                             :Edit the selected town placer configuration
 STR_TP_RAINFALL_DELETE_BUTTON_CAPTION                           :{BLACK}Delete
 STR_TP_RAINFALL_DELETE_BUTTON_TOOLTIP                           :Delete the selected town placer configuration
+STR_TP_RAINFALL_LIST_ITEM                                       :Weight {COMMA}: Placer {STRING}, Parameters:
+STR_TP_RAINFALL_LIST_PARAMETER                                  : {COMMA}
 
 STR_TPE_CAPTION                                                 :{WHITE}Edit town placer configuration
 STR_TPE_TOWN_PLACER                                             :{BLACK}Town placer

@@ -31,42 +31,265 @@
 typedef void TownPlacerEditCallback(Window *w, TownPlacerPhase phase, TownPlacerConfig config);
 void ShowTownPlacerEditWindow(Window *parent, int window_number, TownPlacerEditCallback *callback, TownPlacerPhase phase, TownPlacerConfig config);
 
+struct TownPlacerGUIList {
+
+	static const int INVALID_SELECTION = -1;
+
+	NWidgetBase *panel;
+	Scrollbar *scrollbar;
+	int selected_line;
+	std::vector<TownPlacerConfig> config;
+	std::vector<TownPlacer*>* town_placers;
+
+	TownPlacerGUIList()
+	{
+		this->scrollbar = NULL;
+		this->selected_line = INVALID_SELECTION;
+		this->config = std::vector<TownPlacerConfig>();
+	}
+
+	TownPlacer *GetTownPlacer(TownPlacerKey key) const
+	{
+		for (uint n = 0; n < this->town_placers->size(); n++) {
+			if (key == this->town_placers->at(n)->GetKey()) {
+				return this->town_placers->at(n);
+			}
+		}
+		return NULL;
+	}
+
+	bool HasSelectedLine() { return this->selected_line != INVALID_SELECTION; }
+	TownPlacerConfig GetSelectedConfig() { return this->config[this->selected_line]; }
+
+	int GetLineFromPt(int y) const
+	{
+		/* Selected line, but without considering a potential offset due to the scrollbar */
+		int raw_selected_line = (y - this->panel->pos_y - WD_FRAMERECT_TOP) / FONT_HEIGHT_NORMAL;
+
+		/* User clicked below end of list */
+		if ((uint)raw_selected_line >= this->scrollbar->GetCapacity()) {
+			return INVALID_SELECTION;
+		}
+
+		/* Consider scroll bar offset */
+	    int selected_line_before_list_bounds = raw_selected_line + this->scrollbar->GetPosition();
+
+		/* Only consider the destination/timetable lines corresponding to the orders, and the destination line; not potentially
+		 * left free space below */
+		if (selected_line_before_list_bounds < (int)this->town_placers->size() && selected_line_before_list_bounds >= 0) {
+			return selected_line_before_list_bounds;
+		} else {
+			return INVALID_SELECTION;
+		}
+	}
+
+	void DrawWidget(const Rect &r) const
+	{
+		int y = r.top + WD_FRAMERECT_TOP;
+		for (int line = this->scrollbar->GetPosition(); line < (int)this->config.size(); line++) {
+			TownPlacerConfig config = this->config[line];
+			TownPlacer *town_placer = this->GetTownPlacer(config.town_placer);
+
+			char buffer[1024] = "";
+
+			/* The position where the next token will be written to */
+			char* curr_buffer_pointer = buffer;
+
+			/* The temporary buffer one token will be written to, before strings are concatenated */
+			char tmp_buffer[1024];
+
+			SetDParam(0, config.weight);
+			SetDParam(1, town_placer->GetName());
+			GetString(tmp_buffer, STR_TP_RAINFALL_LIST_ITEM, lastof(tmp_buffer));
+			curr_buffer_pointer = strecat(curr_buffer_pointer, tmp_buffer, lastof(buffer));
+
+			std::map<int, TownPlacerParameter> parameters = town_placer->GetParameters();
+			for (std::map<int, TownPlacerParameter>::iterator it2 = parameters.begin(); it2 != parameters.end(); it2++) {
+				int parameter_index = it2->first;
+				if (config.parameter_map.find(parameter_index) != config.parameter_map.end()) {
+					SetDParam(0, config.parameter_map[parameter_index]);
+					GetString(tmp_buffer, STR_TP_RAINFALL_LIST_PARAMETER, lastof(tmp_buffer));
+					curr_buffer_pointer = strecat(curr_buffer_pointer, tmp_buffer, lastof(buffer));
+				}
+			}
+
+			TextColour colour = (selected_line == line ? TC_WHITE : TC_BLACK);
+
+			bool rtl = _current_text_dir == TD_RTL;
+			int left_border = r.left + WD_FRAMERECT_LEFT;
+			int right_border = r.right - WD_FRAMERECT_RIGHT;
+			int x1 = rtl ? right_border : left_border;
+			int x2 = rtl ? left_border : right_border;
+			DrawString(x1, x2, y, buffer, colour);
+
+			y += FONT_HEIGHT_NORMAL;
+		}
+	}
+
+	void ProcessListClick(Point pt)
+	{
+		int clicked_line = this->GetLineFromPt(pt.y);
+		if (clicked_line != INVALID_SELECTION) {
+			this->selected_line = clicked_line;
+		}
+	}
+
+	void UpdateScrollbarCount()
+	{
+		this->scrollbar->SetCount(this->config.size());
+	}
+
+	void DeleteSelectedLine()
+	{
+		this->config.erase(this->config.begin() + this->selected_line);
+		/* If the last line was selected, select the (now) last line afterwards, otherwise just keep the selection index */
+		if (this->selected_line >= (int)this->config.size()) {
+			this->selected_line--;
+		}
+		/* To make it explicit: If we deleted the last line, nothing selectable remains, thus drop the selection */
+		if (this->selected_line < 0) {
+			this->selected_line = INVALID_SELECTION;
+		}
+	}
+
+	void ReplaceSelectedConfig(TownPlacerConfig config)
+	{
+		if (this->selected_line != INVALID_SELECTION) {
+			this->config[this->selected_line] = config;
+		}
+	}
+};
+
 /** In this window, expert options for town placement using the rainfall river generator can be configured.
  *  It can be opened both from the world generation, and from the heightmap generation dialog.
  */
 struct TownRainfallOptionsWindow : Window {
 
+private:
+	TownPlacerGUIList lists[2];
+	std::vector<TownPlacer*> town_placers;
+
+public:
 	TownRainfallOptionsWindow(WindowDesc *desc, Window *parent, WindowNumber window_number = 0) : Window(desc)
 	{
 		this->parent = parent;
-		this->InitNested(window_number);
+
+		this->CreateNestedTree();
+
+		this->town_placers = GetAllTownPlacers();
+		this->lists[TPP_PHASE_ONE_CITY].town_placers = &this->town_placers;
+		this->lists[TPP_PHASE_TWO_TOWN].town_placers = &this->town_placers;
+		this->lists[TPP_PHASE_ONE_CITY].panel = this->GetWidget<NWidgetBase>(WID_TROP_PHASE_ONE_MATRIX);
+		this->lists[TPP_PHASE_TWO_TOWN].panel = this->GetWidget<NWidgetBase>(WID_TROP_PHASE_TWO_MATRIX);
+		this->lists[TPP_PHASE_ONE_CITY].scrollbar = this->GetScrollbar(WID_TROP_PHASE_ONE_SCROLLBAR);
+		this->lists[TPP_PHASE_TWO_TOWN].scrollbar = this->GetScrollbar(WID_TROP_PHASE_TWO_SCROLLBAR);
+
+		this->FinishInitNested(window_number);
+	}
+
+	~TownRainfallOptionsWindow()
+	{
+		for (std::vector<TownPlacer*>::iterator it = this->town_placers.begin(); it != this->town_placers.end(); it++) {
+			delete *it;
+		}
 	}
 
 	static void AddTownPlacerCallback(Window *w, TownPlacerPhase phase, TownPlacerConfig config)
 	{
+		TownRainfallOptionsWindow *window = (TownRainfallOptionsWindow*)w;
+		window->AddConfig(phase, config);
+		window->SetDirty();
 	}
 
 	static void EditTownPlacerCallback(Window *w, TownPlacerPhase phase, TownPlacerConfig config)
 	{
+		TownRainfallOptionsWindow *window = (TownRainfallOptionsWindow*)w;
+		window->ReplaceSelectedConfig(phase, config);
+		window->SetDirty();
+	}
+
+	void AddConfig(TownPlacerPhase phase, TownPlacerConfig config)
+	{
+		this->lists[phase].config.push_back(config);
+	}
+
+	void ReplaceSelectedConfig(TownPlacerPhase phase, TownPlacerConfig config)
+	{
+		this->list[phase].ReplaceSelectedConfig(config);
 	}
 
 	virtual void OnClick(Point pt, int widget, int click_count)
 	{
-		TownPlacerConfig config = TownPlacerConfig();
+
 		switch (widget) {
-			case WID_TROP_PHASE_ONE_ADD_BUTTON:
+			case WID_TROP_PHASE_ONE_MATRIX:
+				this->lists[TPP_PHASE_ONE_CITY].ProcessListClick(pt);
+				this->SetDirty();
+				break;
+			case WID_TROP_PHASE_TWO_MATRIX:
+				this->lists[TPP_PHASE_TWO_TOWN].ProcessListClick(pt);
+				this->SetDirty();
+				break;
+			case WID_TROP_PHASE_ONE_ADD_BUTTON: {
+				TownPlacerConfig config = TownPlacerConfig();
+				config.weight = 100;
 				ShowTownPlacerEditWindow(this, 0, TownRainfallOptionsWindow::AddTownPlacerCallback, TPP_PHASE_ONE_CITY, config);
 				break;
+			}
 			case WID_TROP_PHASE_ONE_EDIT_BUTTON:
-				ShowTownPlacerEditWindow(this, 0, TownRainfallOptionsWindow::EditTownPlacerCallback, TPP_PHASE_ONE_CITY, config);
+				if (this->lists[TPP_PHASE_ONE_CITY].HasSelectedLine()) {
+					ShowTownPlacerEditWindow(this, 0, TownRainfallOptionsWindow::EditTownPlacerCallback, TPP_PHASE_ONE_CITY, this->lists[TPP_PHASE_ONE_CITY].GetSelectedConfig());
+				}
 				break;
-			case WID_TROP_PHASE_TWO_ADD_BUTTON:
+			case WID_TROP_PHASE_ONE_DELETE_BUTTON:
+				if (this->lists[TPP_PHASE_ONE_CITY].HasSelectedLine()) {
+					this->lists[TPP_PHASE_ONE_CITY].DeleteSelectedLine();
+					this->SetDirty();
+				}
+				break;
+
+			case WID_TROP_PHASE_TWO_ADD_BUTTON: {
+				TownPlacerConfig config = TownPlacerConfig();
+				config.weight = 100;
 				ShowTownPlacerEditWindow(this, 0, TownRainfallOptionsWindow::AddTownPlacerCallback, TPP_PHASE_TWO_TOWN, config);
 				break;
+			}
 			case WID_TROP_PHASE_TWO_EDIT_BUTTON:
-				ShowTownPlacerEditWindow(this, 0, TownRainfallOptionsWindow::EditTownPlacerCallback, TPP_PHASE_TWO_TOWN, config);
+				if (this->lists[TPP_PHASE_TWO_TOWN].HasSelectedLine()) {
+					ShowTownPlacerEditWindow(this, 0, TownRainfallOptionsWindow::EditTownPlacerCallback, TPP_PHASE_TWO_TOWN, this->lists[TPP_PHASE_TWO_TOWN].GetSelectedConfig());
+				}
+				break;
+			case WID_TROP_PHASE_TWO_DELETE_BUTTON:
+				if (this->lists[TPP_PHASE_TWO_TOWN].HasSelectedLine()) {
+					this->lists[TPP_PHASE_TWO_TOWN].DeleteSelectedLine();
+					this->SetDirty();
+				}
 				break;
 		}
+	}
+
+	virtual void DrawWidget(const Rect &r, int widget) const
+	{
+		switch(widget) {
+			case WID_TROP_PHASE_ONE_MATRIX:
+				this->lists[TPP_PHASE_ONE_CITY].DrawWidget(r);
+				break;
+			case WID_TROP_PHASE_TWO_MATRIX:
+				this->lists[TPP_PHASE_TWO_TOWN].DrawWidget(r);
+				break;
+		}
+	}
+
+	virtual void OnResize()
+	{
+		this->lists[TPP_PHASE_ONE_CITY].scrollbar->SetCapacityFromWidget(this, WID_TROP_PHASE_ONE_MATRIX, WD_FRAMERECT_TOP + WD_FRAMERECT_BOTTOM);
+		this->lists[TPP_PHASE_TWO_TOWN].scrollbar->SetCapacityFromWidget(this, WID_TROP_PHASE_TWO_MATRIX, WD_FRAMERECT_TOP + WD_FRAMERECT_BOTTOM);
+	}
+
+	virtual void OnInvalidateData(int data = 0, bool gui_scope = true)
+	{
+		this->lists[TPP_PHASE_ONE_CITY].UpdateScrollbarCount();
+		this->lists[TPP_PHASE_TWO_TOWN].UpdateScrollbarCount();
 	}
 };
 
@@ -82,7 +305,7 @@ static const NWidgetPart _nested_town_rainfall_option_widgets[] = {
 		  NWidget(NWID_VERTICAL),
 			  NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_TP_RAINFALL_PHASE_ONE_CAPTION, STR_TP_RAINFALL_PHASE_ONE_TOOLTIP), SetFill(1, 1),
 			  NWidget(NWID_HORIZONTAL),
-				  NWidget(WWT_MATRIX, COLOUR_GREY, WID_TROP_PHASE_ONE_MATRIX), SetMinimalSize(600, 200), SetFill(1, 0), SetResize(1, 14), SetScrollbar(WID_TROP_PHASE_ONE_SCROLLBAR),
+				  NWidget(WWT_PANEL, COLOUR_GREY, WID_TROP_PHASE_ONE_MATRIX), SetMinimalSize(600, 200), SetFill(1, 0), SetResize(1, 10), SetScrollbar(WID_TROP_PHASE_ONE_SCROLLBAR), EndContainer(),
 				  NWidget(NWID_VSCROLLBAR, COLOUR_GREY, WID_TROP_PHASE_ONE_SCROLLBAR),
 			  EndContainer(),
 			  NWidget(NWID_HORIZONTAL),
@@ -95,7 +318,7 @@ static const NWidgetPart _nested_town_rainfall_option_widgets[] = {
 			  NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_TP_RAINFALL_PHASE_TWO_CAPTION, STR_TP_RAINFALL_PHASE_TWO_TOOLTIP), SetFill(1, 1),
 			  NWidget(NWID_HORIZONTAL),
 //			NWidget(WWT_PANEL, COLOUR_GREY, WID_VT_TIMETABLE_PANEL), SetMinimalSize(388, 82), SetResize(1, 10), SetDataTip(STR_NULL, STR_TIMETABLE_TOOLTIP), SetScrollbar(WID_VT_SCROLLBAR), EndContainer(),
-				  NWidget(WWT_MATRIX, COLOUR_GREY, WID_TROP_PHASE_TWO_MATRIX), SetMinimalSize(600, 200), SetResize(1, 14), SetFill(1, 0), SetScrollbar(WID_TROP_PHASE_TWO_SCROLLBAR),
+				  NWidget(WWT_PANEL, COLOUR_GREY, WID_TROP_PHASE_TWO_MATRIX), SetMinimalSize(600, 200), SetResize(1, 10), SetFill(1, 0), SetScrollbar(WID_TROP_PHASE_TWO_SCROLLBAR), EndContainer(),
 				  NWidget(NWID_VSCROLLBAR, COLOUR_GREY, WID_TROP_PHASE_TWO_SCROLLBAR),
 			  EndContainer(),
 			  NWidget(NWID_HORIZONTAL),
