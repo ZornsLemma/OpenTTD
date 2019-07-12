@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "genworld.h"
+#include "debug.h"
 
 /* The following constants define allowed ranges and default values for all
  * configuration options of the Rainfall River Generator.  The documentation
@@ -110,6 +111,9 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 
 #define RAINFALL_NUMBER_OF_LOWER_LOG_LEVEL 9
 #define RAINFALL_CALCULATE_FLOW_LOG_LEVEL 9
+#define RAINFALL_DEFINE_LAKES_LOG_LEVEL 9
+#define RAINFALL_CONSUME_LAKES_LOG_LEVEL 9
+#define RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -379,6 +383,14 @@ inline void DeclareDisappearTile(byte *water_info, TileIndex tile) { SetWaterTyp
  */
 inline bool IsDisappearTile(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_MAP_EDGE_DISAPPEAR; }
 
+inline void DeclareRiver(byte *water_info, TileIndex tile) { SetWaterType(water_info, tile, WI_RIVER); }
+inline bool IsRiver(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_RIVER; }
+
+inline bool IsWaterTile(byte *water_info, TileIndex tile) { return IsRiver(water_info, tile) || IsLakeCenter(water_info, tile) || IsOrdinaryLakeTile(water_info, tile); }
+
+inline void MarkProcessed(byte *water_info, TileIndex tile) { SetBit(water_info[tile], 7); }
+inline bool WasProcessed(byte *water_info, TileIndex tile) { return GB(water_info[tile], 7, 1); }
+
 /** This HeightLevelIterator is responsible for calculating the flow.  Flow is meant to flow from higher towards
  *  lower tiles, and not in cycles.  Usually, in flow direction flow increases, but later code
  *  (flow modificators) may break that condition.  Flow calculation relies on the previously calculated
@@ -431,6 +443,338 @@ public:
 	inline byte* GetWaterInfo() { return this->water_info; }
 };
 
+struct LakeDefinitionRun;
+
+/** Class storing all necessary information about an already calculated lake.  Instances of this class are constructed
+ *  in the DefineLakesIterator.
+ */
+struct Lake {
+	/** The center tile of the lake, i.e. the only active lake center within the lake.
+     */
+	TileIndex lake_center;
+
+	/** Lakes in terms of this algorithm have a vertical dimension.  The more water flows into a lake
+	 *  filling some basin, the higher water level ascends.  Lateron, we will level terrain to that
+	 *  level, as lakes currently have no depth in OpenTTD.  The value stored here is the currently
+     *  generated heightlevel of a lake surface, in terms of heightlevels.
+	 */
+	int surface_height;
+
+	/** The amount of flow, which for this lake was already processed as outflow, i.e. left the lake.
+	 *  The point is, that if when the lake is processed first, not enough water enters for making an
+	 *  outflow at all, this variable remains to be zero, and maybe lateron, all outflow has to be
+	 *  processed at once.  On the other hand, we *must* avoid situations where we process
+	 *  the same outflow twice.
+	 */
+	int already_processed_outflow;
+
+	/** The amount of flow that was already spent in this lake for adding tiles to the lake. */
+	int already_spent_flow;
+
+	/** If this flag is set, the Lake was finished without finding an outflow.  The only case where this
+	 *  can happen is if the Lake hits the map border.
+	 */
+	bool finished_without_outflow;
+
+	/** The outflow tile of the lake, if it has one, or INVALID_TILE else.  The out-flow tile is a tile,
+	 *  where flow leaves the lake, and ends up at the sea, at the map edge, or in another lake.
+     */
+	TileIndex outflow_tile;
+
+	/** During construction of the lake, this stores the tiles where we may expand the lake.  Stored in
+     *  Lake, as we may come back to a lake multiple times, and want to proceed with the edge we
+     *  calculated last time if doing so.  After we have found an outflow, this set is not of any interest
+     *  any longer.
+	 *
+	 *  Note: This set only contains edge tiles at the current surface height.  When they are exhausted, and
+	 *  not outflow is found yet, the tiles for the next level have to be recalculated.
+     */
+	std::set<TileIndex> unprocessed_edge_tiles;
+
+	/** The unprocessed edge tiles are dirty, and need to be recalculated before the Lake is enlarged next time.
+	 *  This happens, if parts of the lake, but not (yet) the lake center are consumed by another lake.
+	 *  Then we cannot be sure that the unprocessed edge tiles make sense any longer, but as recalculation comes
+	 *  at some cost, we want to delay it until actually needed.
+	 */
+	bool unprocessed_edge_tiles_dirty;
+
+	/** Stores all tiles of this lake. This may on the one hand cost some memory, on the other hand, lake
+	 *  construction cannot work such that when determining lake extent via the lake connected component,
+	 *  never accidentally two lakes that are in fact different, maybe with different surface heights,
+	 *  are merged.  Thus, storing lake extent explicitely instead of recalculating it whenever needed
+	 *  is the safer approach.
+	 */
+	std::set<TileIndex> lake_tiles;
+
+	Lake(TileIndex lake_center);
+
+	/** Returns the center tile of the lake, i.e. the only active lake center of the lake.
+	 *  @return the center tile of the lake.
+	 */
+	inline TileIndex GetCenterTile() { return this->lake_center; }
+
+	/** Sets the surface height of the lake, i.e. the height to which it will be terraformed when actually generating the water.
+	 *  @param surface_height the new surface height
+	 */
+	inline void SetSurfaceHeight(int surface_height) { this->surface_height = surface_height; }
+
+	/** Returns the surface height of the lake, i.e. the height to which it will be terraformed when actually generating the water.
+	 */
+	inline int GetSurfaceHeight() { return this->surface_height; }
+
+	/** Sets the already processed outflow of the lake
+	 *  @param already_processed_outflow the already processed outflow of the lake
+	 *  @see Lake::already_processed_outflow for detail information about why this information is needed
+	 */
+	inline void SetAlreadyProcessedOutflow(int already_processed_outflow) { this->already_processed_outflow = already_processed_outflow; }
+
+	/** Returns the already processed outflow of the lake
+	 *  @param the already processed outflow of the lake
+	 *  @see Lake::already_processed_outflow for detail information about why this information is needed
+	 */
+	inline int GetAlreadyProcessedOutflow() { return this->already_processed_outflow; }
+
+	inline void SetAlreadySpentFlow(int already_spent_flow) { this->already_spent_flow = already_spent_flow; }
+	inline int GetAlreadySpentFlow() { return this->already_spent_flow; }
+
+	/** Returns wether the lake was finished without finding an outflow (i.e. if it hit the map border).
+	 */
+	inline bool WasFinishedWithoutOutflow() { return this->finished_without_outflow; }
+
+	/** Sets the outflow tile of the lake.  Flow starting at this tile *must* end up somewhere outside the lake.
+	 *  It is typically not part of the lake.
+	 *  @param outflow_tile the outflow tile
+	 */
+	inline void SetOutflowTile(TileIndex outflow_tile) { this->outflow_tile = outflow_tile; }
+
+	/** Returns the outflow tile of the lake. Flow starting at this tile ends up somewhere outside the lake.
+	 *  It is typically not part of the lake.
+	 *  @return the outflow tile of the lake
+	 */
+	inline TileIndex GetOutflowTile() { return this->outflow_tile; }
+
+	/** Returns the number of remaining unprocessed edge tiles.
+	 */
+	inline uint GetNumberOfUnprocessedEdgeTiles() { return this->unprocessed_edge_tiles.size(); }
+
+	/** Registers the given tile as unprocessed edge tile.
+	 *  @param tile some tile
+	 *  @see Lake::unprocessed_edge_tiles for more information
+	 */
+	inline void RegisterUnprocessedEdgeTile(TileIndex tile) { this->unprocessed_edge_tiles.insert(tile); }
+
+	/** Unregisters the given tile from the unprocessed edge tiles, typically because it has become a lake tile.
+	 *  @param tile some tile
+	 *  @see Lake::unprocessed_edge_tiles for more information
+	 */
+	inline void UnregisterUnprocessedEdgeTile(TileIndex tile) { this->unprocessed_edge_tiles.erase(tile); }
+
+	/** Removes all unprocessed edge tiles.
+	 *  @see Lake::unprocessed_edge_tiles for more information
+	 */
+	inline void ClearUnprocessedEdgeTiles() { this->unprocessed_edge_tiles.clear(); }
+
+	inline void SetUnprocessedEdgeTilesDirty(bool unprocessed_edge_tiles_dirty) { this->unprocessed_edge_tiles_dirty = unprocessed_edge_tiles_dirty; }
+	inline bool AreUnprocessedEdgeTilesDirty() { return this->unprocessed_edge_tiles_dirty; }
+
+	/** Returns the begin() const iterator of the unprocessed edge tiles.
+	 *  @return the begin() const iterator of the unprocessed edge tiles.
+	 */
+	inline std::set<TileIndex>::const_iterator GetUnprocessedEdgeBegin() { return this->unprocessed_edge_tiles.begin(); }
+
+	/** Returns the end() const iterator of the unprocessed edge tiles.
+	 *  @return the end() const iterator of the unprocessed edge tiles.
+	 */
+	inline std::set<TileIndex>::const_iterator GetUnprocessedEdgeEnd() { return this->unprocessed_edge_tiles.end(); }
+
+	/** Returns wether the given tile is a tile of this lake.
+     *  @param tile some tile
+	 *  @return wether the given tile is a tile of this lake.
+	 */
+	inline bool IsLakeTile(TileIndex tile) { return this->lake_tiles.find(tile) != this->lake_tiles.end(); }
+
+	/** Adds the given tile to the lake.
+	 *  @param tile some tile
+	 */
+	void AddLakeTile(TileIndex tile);
+
+	/** Removes the given tile from the lake.
+	 *  @param tile some tile
+	 */
+	inline void RemoveLakeTile(TileIndex tile) { this->lake_tiles.erase(tile); }
+
+	/** Returns the number of tiles of the lake.
+	 *  @return the number of tiles of the lake.
+	 */
+	inline int GetNumberOfLakeTiles() { return this->lake_tiles.size(); }
+
+	/** Removes all tiles from the lake.
+	 */
+	inline void ClearLakeTiles() { this->lake_tiles.empty(); }
+
+	/** Returns the begin() const iterator for the lake tiles.
+	 *  @return the begin() const iterator for the lake tiles.
+	 */
+	inline std::set<TileIndex>::const_iterator GetLakeTilesBegin() { return this->lake_tiles.begin(); }
+
+	/** Returns the end() const iterator for the lake tiles.
+	 *  @return the end() const iterator for the lake tiles.
+	 */
+	inline std::set<TileIndex>::const_iterator GetLakeTilesEnd() { return this->lake_tiles.end(); }
+
+	/** Returns the set of lake tiles.  In fact, we want to hide it using the upper functions,
+	 *  but for calculating a path within a lake, the direct reference is needed.
+	 *  @return the set of lake tiles
+	 */
+	inline std::set<TileIndex>* GetLakeTiles() { return &this->lake_tiles; }
+
+	void RemoveHigherLakeTiles(int max_height, int *water_flow, byte *water_info, std::map<TileIndex, Lake*> &tile_to_lake);
+
+	void PrintToDebug(int level, int detailLevel);
+};
+
+/** ConnectedComponentCalculator for finding all tiles of a lake (the DefineLakesIterator declared lake tiles WI_LAKE,
+ *  but did not produce an explicit list of the tiles of some particular lake).
+ */
+struct LakeConnectedComponentCalculator : public ConnectedComponentCalculator<std::set<TileIndex> > {
+
+private:
+	byte *water_info;
+	int max_height;
+	Lake *excluded_lake;
+
+protected:
+	inline virtual bool RecognizeTile(std::set<TileIndex> &tiles, TileIndex tile, TileIndex prev_tile)
+	{
+		return !excluded_lake->IsLakeTile(tile) && tiles.find(tile) == tiles.end() && (IsLakeCenter(water_info, tile) || IsOrdinaryLakeTile(water_info, tile)) && GetTileZ(tile) <= max_height;
+	}
+
+	inline virtual void StoreInContainer(std::set<TileIndex> &tiles, TileIndex tile) { tiles.insert(tile); }
+
+public:
+	LakeConnectedComponentCalculator(byte *water_info) : ConnectedComponentCalculator(false) { this->water_info = water_info;	}
+
+	inline void SetMaxHeight(int max_height) { this->max_height = max_height; }
+	inline void SetExcludedLake(Lake *excluded_lake) { this->excluded_lake = excluded_lake; }
+};
+
+struct DefineLakesIterator;
+struct LakeDefinitionState;
+
+/** Information about processing one particular Lake during lake definition.
+ *  @see LakeDefinitionState
+ */
+struct LakeDefinitionRun {
+
+	Lake *lake;        ///< The Lake
+	int extra_flow;    ///< The flow added newly to the Lake in this step
+
+	LakeDefinitionRun(Lake *lake, int extra_flow) : lake(lake), extra_flow(extra_flow) {}
+
+	inline Lake *GetLake() { return this->lake; }
+	inline int GetExtraFlow() { return this->extra_flow; }
+};
+
+/** During one run of lake definition, flow is propagated from some lake center up in the mountains,
+ *  through possibly several other lake centers, until the sea is reached.  The LakeDefinitionState
+ *  stores the information that needs to be propagated along that path (e.g., was a lake already
+ *  processed?, to avoid cycles).
+ */
+struct LakeDefinitionState {
+	/** Each LakeDefinitionRun stores information about processing one particular Lake along the path described above.
+	 */
+	std::vector<LakeDefinitionRun> runs;
+
+	/** Set of already processed lake centers in this run of lake definition.
+	 */
+	std::set<TileIndex> processed_lake_centers;
+
+	/** The minimum surface height we have seen so far in this particular run of lake definition.
+	 */
+	int min_surface_height;
+
+	LakeDefinitionState() : runs(std::vector<LakeDefinitionRun>()), processed_lake_centers(std::set<TileIndex>()), min_surface_height(-1) {}
+	void StartRun(LakeDefinitionRun &run);
+	int WasPreviousLakeLower();
+
+	inline void SetMinSurfaceHeight(int min_surface_height) { this->min_surface_height = min_surface_height; }
+	inline void DropMinSurfaceHeight() { this->min_surface_height = -1; }
+	inline int GetMinSurfaceHeight() { return this->min_surface_height; }
+
+	inline bool WasAlreadyProcessed(TileIndex tile) { return this->processed_lake_centers.find(tile) != this->processed_lake_centers.end(); }
+	inline void MarkProcessed(TileIndex tile) { this->processed_lake_centers.insert(tile); }
+	inline void MarkUnprocessed(TileIndex tile) { this->processed_lake_centers.erase(tile); }
+};
+
+/** The CalculateFlowIterator just defines tiles where water ends without immediate possibility for continuing flow LAKE_CENTERs.
+ *  This iterator calculates lakes around these tiles.  If an outflow tile can be found within the bounds given by the inflow,
+ *  flow along the outflow path is increased.  Lakes that are found at the end of an outflow path are calculated immediately
+ *  in a recursive call, thus this iterator doesn´t purely calculate top-down.  But this is no harm, as a lake can only
+ *  grow when calculated for the second time (e.g. because it gains the water of another outflow of another lake), never
+ *  shrink.  And only shrinking would be a problem, as tiles are declared WI_LAKE tiles immediately.
+ */
+struct DefineLakesIterator : public HeightLevelIterator {
+
+private:
+	int create_lake_runs = 0;
+
+	LakeConnectedComponentCalculator *lake_connected_component_calculator;
+
+	int *number_of_lower_tiles;
+
+	int *water_flow;
+
+	byte *water_info;
+
+	/** Map from lake tiles to Lake.  In a first version of this code, only lake centers were
+     *  stored here, but experience with running the algorithms indicated that storing all lake
+	 *  tiles, and thus being able to consume lakes without having to calculate a connected
+	 *  component is the better decision.
+	 */
+	std::map<TileIndex, Lake*> tile_to_lake;
+
+	/** Helper vector just for the purpose of properly deleting all Lake instances we ever created.
+	 *  (entries of the map tile_to_lake will be modified by mapping tiles to other Lake instances,
+	 *   thus this method of avoiding memory leaks is the safest and simplest one.
+	 */
+	std::vector<Lake*> all_lakes;
+
+	void DiscardLakeNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int ref_height);
+	bool DoesFlowEndOutsideLake(TileIndex tile, Lake *lake, LakeDefinitionState &state);
+	Lake* GetDestinationLake(TileIndex tile);
+	bool DoesOutflowHitLake(Lake *other_lake, Lake *lake);
+	int ConsumeLake(Lake *lake, TileIndex other_lake_tile, int max_height, LakeDefinitionState &state, LakeDefinitionRun &run);
+	void RecalculateUnprocessedEdgeTiles(Lake *lake);
+	void TerraformPathsFromCentersToOutflow(Lake *lake, TileIndex outflow_tile, int desired_height);
+	void RegisterAppropriateNeighborTilesAsUnprocessed(Lake *lake, TileIndex tile, int ref_height);
+
+protected:
+
+	virtual void ProcessTile(TileIndex tile, Slope slope);
+
+public:
+
+	DefineLakesIterator(HeightIndex *height_index, int *number_of_lower_tiles, int *water_flow, byte *water_info);
+	~DefineLakesIterator();
+	void CreateLake(TileIndex tile, LakeDefinitionState &state, int extra_flow = 0);
+
+	inline bool HasSurfaceHeightForLake(TileIndex lake_center) { return this->tile_to_lake.find(lake_center) != this->tile_to_lake.end(); }
+	inline int GetSurfaceHeightForLake(TileIndex lake_center) {	return this->tile_to_lake[lake_center]->GetSurfaceHeight(); }
+	inline Lake* GetLake(TileIndex tile) { return this->HasLakeTile(tile) ? this->tile_to_lake[tile] : NULL; }
+
+	/** Registers a tile to lake mapping in the internal map.
+	 *  Only needed in special cases lake fine tuning tiles to meet slopes.  The main lake related
+	 *  work is done in private functions of this class.
+	 */
+	inline void RegisterLakeTile(TileIndex tile, Lake *lake) { this->tile_to_lake[tile] = lake; }
+
+	inline bool HasLakeTile(TileIndex tile) { return this->tile_to_lake.find(tile) != this->tile_to_lake.end(); }
+
+	inline void SetLakeCenterMapping(TileIndex tile, Lake *lake) { this->tile_to_lake[tile] = lake; }
+	inline void EraseLakeCenterMapping(TileIndex tile) { this->tile_to_lake.erase(tile); }
+	inline void AddToFlow(TileIndex tile, int offset) { this->water_flow[tile] += offset; }
+	inline void SetWaterInfo(TileIndex tile, byte value) { this->water_info[tile] = value; }
+};
 
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
@@ -453,6 +797,7 @@ private:
 	 */
 	static std::vector<TileIndex>* found_path;
 	static std::set<TileIndex>* lake_tiles;
+	static int max_height;
 
 	static int32 LakePathSearch_EndNodeCheck(AyStar *aystar, OpenListNode *current);
 	static int32 LakePathSearch_CalculateG(AyStar *aystar, AyStarNode *current, OpenListNode *parent);
@@ -464,7 +809,7 @@ private:
 	static uint LakePathSearch_Hash(uint tile, uint dir);
 
 public:
-	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles);
+	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);
 
 	RainfallRiverGenerator() {}
 	virtual void GenerateRivers();

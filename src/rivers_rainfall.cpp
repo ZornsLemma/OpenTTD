@@ -17,6 +17,7 @@
 #include "landscape_util.h"
 #include "map_func.h"
 #include "slope_func.h"
+#include "settings_type.h"
 #include "terraform_func.h"
 #include "tile_map.h"
 #include "water_map.h"
@@ -642,6 +643,977 @@ CalculateFlowIterator::~CalculateFlowIterator()
 }
 
 /* ================================================================================================================== */
+/* ======================================== Lake ==================================================================== */
+/* ================================================================================================================== */
+
+/** Creates a new Lake instance.  Its surface height is set to GetTileZ of the given center tile.
+ */
+Lake::Lake(TileIndex lake_center)
+{
+	this->lake_center = lake_center;
+	this->surface_height = GetTileZ(this->lake_center);
+	this->already_processed_outflow = 0;
+	this->already_spent_flow = 0;
+	this->finished_without_outflow = false;
+	this->outflow_tile = INVALID_TILE;
+	this->unprocessed_edge_tiles = std::set<TileIndex>();
+	this->unprocessed_edge_tiles_dirty = false;
+	this->lake_tiles = std::set<TileIndex>();
+}
+
+void Lake::AddLakeTile(TileIndex tile)
+{
+	this->lake_tiles.insert(tile);
+
+	uint x = TileX(tile);
+	uint y = TileY(tile);
+	if (x <= 1 || y <= 1 || x >= MapMaxX() - 1 || y >= MapMaxY() - 1) {
+		this->finished_without_outflow = true;
+	}
+}
+
+/** This function removes all tiles from the lake that are higher than the given height.
+ *  As it is meant to be called in a situation where already an outflow tile is known, it
+ *  does not touch the unprocessed edge tiles.
+ *  @param max_height maximum allowed height
+ */
+void Lake::RemoveHigherLakeTiles(int max_height, int *water_flow, byte *water_info,  std::map<TileIndex, Lake*> &tile_to_lake)
+{
+	/* Remove safely what is to be removed.  As this whole code is only executed in a corner case anyway
+     * performance shouldn´t be an issue either.
+	 */
+	std::set<TileIndex> tiles_to_be_removed = std::set<TileIndex>();
+	for (std::set<TileIndex>::const_iterator it = this->lake_tiles.begin(); it != this->lake_tiles.end(); it++) {
+		TileIndex tile = *it;
+		if (GetTileZ(tile) > max_height) {
+			tiles_to_be_removed.insert(tile);
+			if (!IsLakeCenter(water_info, tile)) {
+				if (water_flow[tile] >= _settings_newgame.game_creation.rainfall.flow_for_river) {
+					DeclareRiver(water_info, tile);
+				} else {
+					SetWaterType(water_info, tile, WI_NONE);
+				}
+			}
+		}
+	}
+
+	for (std::set<TileIndex>::const_iterator it = tiles_to_be_removed.begin(); it != tiles_to_be_removed.end(); it++) {
+		this->lake_tiles.erase(*it);
+		tile_to_lake.erase(*it);
+	}
+}
+
+/** Debug function: Print extensive information about the lake to DEBUG(misc).
+ *  @param level output level for anything except the lake tiles and unprocessed edge tiles
+ *  @param detail_level output level for the lake tiles and unprocessed edge tiles
+ */
+void Lake::PrintToDebug(int level, int detail_level)
+{
+	DEBUG(map, level, "Lake at (%i,%i) with surface height %i, " PRINTF_SIZE " unprocessed edge tiles, " PRINTF_SIZE " lake tiles",
+						TileX(this->lake_center), TileY(this->lake_center), this->surface_height, this->unprocessed_edge_tiles.size(), this->lake_tiles.size());
+	if (this->outflow_tile != INVALID_TILE) {
+		DEBUG(map, level, ".... Outflow tile is (%i,%i)", TileX(this->outflow_tile), TileY(this->outflow_tile));
+	} else {
+		DEBUG(map, level, ".... No outflow tile found yet.");
+	}
+
+	DEBUG(map, detail_level, ".... Unprocessed edge tiles:");
+	for (std::set<TileIndex>::const_iterator it = this->unprocessed_edge_tiles.begin(); it != this->unprocessed_edge_tiles.end(); it++) {
+		DEBUG(map, detail_level, "........ (%i,%i)", TileX(*it), TileY(*it));
+	}
+	DEBUG(map, detail_level, ".... Lake tiles:");
+	for (std::set<TileIndex>::const_iterator it = this->lake_tiles.begin(); it != this->lake_tiles.end(); it++) {
+		DEBUG(map, detail_level, "........ (%i,%i)", TileX(*it), TileY(*it));
+	}
+}
+
+/* ================================================================================================================== */
+/* ================================= LakeDefinitionState ============================================================ */
+/* ================================================================================================================== */
+
+/** Records, that lake definition has a look at the next Lake, while processing a path from the mountains to the sea.
+ *  @param run detail information
+ */
+void LakeDefinitionState::StartRun(LakeDefinitionRun &run)
+{
+	this->runs.push_back(run);
+	this->processed_lake_centers.insert(run.GetLake()->GetCenterTile());
+}
+
+/** Checks wether the previous lake has a lower surface height than the current one.
+ *  For convenience, if yes, the surface height of the previous lake is returned.
+ *  Otherwise (especially if no previous lake exists), -1 is returned.
+ *  @return the surface height of the previous Lake, if it was lower than the one of the current Lake, -1 otherwise.
+ */
+int LakeDefinitionState::WasPreviousLakeLower()
+{
+	if ((int)this->runs.size() >= 2) {
+		Lake *last_lake = this->runs[this->runs.size() - 1].GetLake();
+		Lake *previous_lake = this->runs[this->runs.size() - 2].GetLake();
+		return (previous_lake->GetSurfaceHeight() < last_lake->GetSurfaceHeight() ? previous_lake->GetSurfaceHeight() : -1);
+	} else {
+		return -1;
+	}
+}
+
+/* ================================================================================================================== */
+/* ================================== DefineLakesIterator  ========================================================== */
+/* ================================================================================================================== */
+
+/** Discards all tiles of the given neighbor tiles, that are not suitable for expanding the
+ *  lake in this step.  Does not yet take the flow into account.
+ */
+void DefineLakesIterator::DiscardLakeNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int ref_height)
+{
+	for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+		if (neighbor_tiles[n] != INVALID_TILE) {
+			if (GetTileZ(neighbor_tiles[n]) > ref_height) {
+				neighbor_tiles[n] = INVALID_TILE;
+			}
+		}
+	}
+}
+
+/** If flow starting at the given tile ends up in a Lake, that Lake instance is returned.
+ *  @return destination Lake, or NULL if flow doesn´t end in a lake
+ */
+Lake* DefineLakesIterator::GetDestinationLake(TileIndex tile)
+{
+	/* Code robustness: Replace potential endless loops in case of (forbidden) circular flow by
+	 * a senseful error message.
+	 */
+	std::set<TileIndex> processed_tiles = std::set<TileIndex>();
+
+	while (tile != INVALID_TILE) {
+		if (IsLakeCenter(this->water_info, tile)) {
+			if (this->tile_to_lake.find(tile) != this->tile_to_lake.end()) {
+				return this->tile_to_lake[tile];
+			} else {
+				return NULL;
+			}
+		} else if (IsTileType(tile, MP_WATER) || IsDisappearTile(this->water_info, tile)) {
+			return NULL;
+		} else {
+			tile = AddFlowDirectionToTile(tile, this->water_info[tile]);
+		}
+
+		if (processed_tiles.find(tile) != processed_tiles.end()) {
+			DEBUG(map, 0, "Error: Circular flow detected at (%i,%i)", TileX(tile), TileY(tile));
+			return NULL;
+		} else {
+			processed_tiles.insert(tile);
+		}
+	}
+
+	return NULL;
+}
+
+/** Returns wether flow starting at the given tile, ends outside the given Lake.
+ *  @param tile some tile
+ *  @param lake some Lake
+ *  @param state current lake definition state
+ */
+bool DefineLakesIterator::DoesFlowEndOutsideLake(TileIndex tile, Lake *lake, LakeDefinitionState &state)
+{
+	int number_of_steps = 0;
+
+	DEBUG(map, 9, "Checking wether tile (%i,%i) ends out of lake", TileX(tile), TileY(tile));
+	while (true) {
+		if (IsLakeCenter(this->water_info, tile)) {
+			/* A Lake center was found, now look wether it is a suitable one. */
+
+			/* Find the corresponding active lake center (we might have found a consumed one) */
+			if (this->tile_to_lake.find(tile) != this->tile_to_lake.end()) {
+				lake = this->tile_to_lake[tile];
+				tile = lake->GetCenterTile();
+			}
+
+			if (number_of_steps == 0 || state.WasAlreadyProcessed(tile)) {
+				/* In the first step, we never find a foreign Lake center.  If we have already seen the Lake center in this
+				 * run of Lake definition we ignore it, since this would lead to endless recursion of CreateLake() below.
+				 * The second case also catches the case that we have found the center of our own Lake.
+				 */
+
+				DEBUG(map, 9, ".... Finishing at (%i,%i) since already processed lake center", TileX(tile), TileY(tile));
+				return false;
+			} else {
+				/* All problematic cases excluded above, success. */
+
+				DEBUG(map, 9, "........ DoesFlowEndOutsideLake found not yet processed lake center at (%i,%i)", TileX(tile), TileY(tile));
+				return true;
+			}
+		} else if (number_of_steps > 0 && lake->IsLakeTile(tile)) {
+			/* We are back in the lake we currently process, this is not an outwards flow. */
+
+			DEBUG(map, 9, ".... We end up in our lake: Tile (%i,%i)", TileX(tile), TileY(tile));
+			return false;
+		} else if ((IsTileType(tile, MP_WATER) && !IsCoastTile(tile)) || IsDisappearTile(this->water_info, tile)) {
+			/* We have reached the sea or the map edge, and have for sure left the lake. */
+
+			DEBUG(map, 9, ".... We end up in the WATER ===> Success: Tile (%i,%i)", TileX(tile), TileY(tile));
+			return true;
+		} else {
+			/* Step forwards along the flow.  This eventually ends up in one of the cases above, as we don´t calculate circular flows.
+			 */
+
+			tile = AddFlowDirectionToTile(tile, this->water_info[tile]);
+			if (tile == INVALID_TILE) {
+				/* INVALID_TILE means leaving the map, which is a legal flow end. */
+				DEBUG(map, 9, ".... Finishing as leaving the map");
+				return true;
+			}
+
+			number_of_steps++;
+			DEBUG(map, 9, ".... We step towards tile (%i,%i)", TileX(tile), TileY(tile));
+		}
+	}
+}
+
+/** Returns wether the outflow of the given other_lake hits (via a chain of arbitrary many lakes) the given lake.
+ *  The case that no outflow tile exists is allowed.
+ *  @param other_lake some Lake
+ *  @param lake another Lake
+ */
+bool DefineLakesIterator::DoesOutflowHitLake(Lake *other_lake, Lake *lake)
+{
+	bool flow_back_to_lake = false;
+	std::set<TileIndex> already_seen_lake_centers = std::set<TileIndex>();
+	Lake *curr_lake = other_lake;
+	while (curr_lake != NULL && curr_lake != lake) {
+		TileIndex center_tile = curr_lake->GetCenterTile();
+		if (already_seen_lake_centers.find(center_tile) != already_seen_lake_centers.end()) {
+			DEBUG(map, 0, "Warning: While consuming lakes: Found a lake cycle at (%i,%i), near (%i,%i) and (%i,%i)", TileX(center_tile), TileY(center_tile),
+						  TileX(other_lake->GetCenterTile()), TileY(other_lake->GetCenterTile()), TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()));
+			break;
+		} else {
+			DEBUG(map, 9, "........ Add: (%i,%i)", TileX(center_tile), TileY(center_tile));
+			already_seen_lake_centers.insert(center_tile);
+		}
+
+		TileIndex outflow_tile = curr_lake->GetOutflowTile();
+		if (outflow_tile != INVALID_TILE) {
+			curr_lake = this->GetDestinationLake(outflow_tile);
+			if (curr_lake == lake) {
+				flow_back_to_lake = true;
+				break;
+			}
+		} else {
+			curr_lake = NULL;
+		}
+	}
+	return flow_back_to_lake;
+}
+
+/** Given a lake, this function consumes another lake.  Consuming means, add its tiles and flow to this lake,
+ *  make the other lake center a consumed lake center.
+ *  @param lake a Lake
+ *  @param tile active lake center of the other lake
+ *  @param state state of lake definition
+ *  @param run current lake definition run
+ *  @return the additional flow that was added to this Lake center tile flow (i.e., if the lake was already consumed, 0 is returned)
+ */
+int DefineLakesIterator::ConsumeLake(Lake *lake, TileIndex tile, int max_height, LakeDefinitionState &state, LakeDefinitionRun &run)
+{
+	DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Consuming neighbor lake starting at (%i,%i)", TileX(tile), TileY(tile));
+
+	/* Extra flow gained by consuming the Lake */
+	int other_lake_flow = 0;
+
+	/** There are cases where we consume a lake with higher surface height.
+	 *  Example: Lake basin of height 1, outflow at height 2, two lake centers A and B in the basin.  lake A might find an outflow to lake B of height 1,
+	 *           and afterwards, lake B is forced to find an outflow of height 2, since it may not choose lake A again.
+	 *  In such cases, we choose all tiles of the higher lake that are low enough, but need to ensure that they are connected with the lower lake
+	 *  (there might be a barrier of higher tiles in between).
+	 *  We do this by calculating paths, and terraforming landscape downwards if necessary.
+	 */
+	std::vector<TileIndex> path_destinations = std::vector<TileIndex>();
+
+	Lake *other_lake = this->tile_to_lake[tile];
+	DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "............... Lake is at (%i,%i) with %i tiles, other surface height %i",
+						  TileX(other_lake->GetCenterTile()), TileY(other_lake->GetCenterTile()), other_lake->GetNumberOfLakeTiles(), other_lake->GetSurfaceHeight());
+
+	bool flow_back_to_lake = this->DoesOutflowHitLake(other_lake, lake) || this->DoesOutflowHitLake(lake, other_lake);
+
+	/* Record tiles added newly to this lake separately, as adding them too early disturbs our
+	 * "Does it belong to our lake"-detection below using lake->IsLakeTile(tile).
+	 */
+	std::vector<TileIndex> new_tiles = std::vector<TileIndex>();
+
+	/* Add all tiles of the other lake */
+	std::set<TileIndex>* other_lake_tiles = other_lake->GetLakeTiles();
+	for (std::set<TileIndex>::const_iterator other_it = other_lake_tiles->begin(); other_it != other_lake_tiles->end(); other_it++) {
+		TileIndex curr_other_lake_tile = *other_it;
+
+		DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".................... Inspecting tile (%i,%i)", TileX(curr_other_lake_tile), TileY(curr_other_lake_tile));
+
+		if (IsActiveLakeCenter(this->water_info, curr_other_lake_tile) && lake->GetCenterTile() != curr_other_lake_tile) {
+			/* Declare other active lake center consumed; our lake may only contain one active lake center */
+
+			/* Add not yet processed flow of the other lake */
+			if (!flow_back_to_lake) {
+				other_lake_flow += this->water_flow[curr_other_lake_tile];
+			}
+
+			DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "......................... Is an active lake center; adding flow %i - %i / %i = %i",
+						  this->water_flow[curr_other_lake_tile], other_lake->GetAlreadyProcessedOutflow(), other_lake->GetAlreadySpentFlow(), other_lake_flow);
+
+			DeclareConsumedLakeCenter(this->water_info, curr_other_lake_tile);
+
+			/* If the consumed lake (which in case of lake switching becomes the lake we continue with shortly) has an outflow to the current lake,
+			 * its flow isn´t actually lost.
+			 */
+			if (other_lake->GetOutflowTile() != INVALID_TILE) {
+				Lake *dest_lake = this->GetDestinationLake(other_lake->GetOutflowTile());
+				if (dest_lake == lake) {
+					other_lake->SetAlreadyProcessedOutflow(0);
+					DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, "........................ Resetting already processed outflow of lake (%i,%i) to 0 since it ends up in our lake",
+						  TileX(other_lake->GetCenterTile()), TileY(other_lake->GetCenterTile()));
+				}
+			}
+		}
+
+		if (IsLakeCenter(this->water_info, curr_other_lake_tile)) {
+			/* Bookkeeping in the lake center to lake map, mark lake tile processed to avoid a potential endless recursion in case the other lake
+			 * gains an outflow back to the tile processed here
+			 */
+			DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "......................... Is a lake center.");
+
+			state.MarkProcessed(curr_other_lake_tile);
+
+			path_destinations.push_back(curr_other_lake_tile);
+		}
+		new_tiles.push_back(curr_other_lake_tile);
+	}
+
+	/* Finally add the tiles of the other lake to our lake. */
+	for (int n = 0; n < (int)new_tiles.size(); n++) {
+		this->tile_to_lake.erase(new_tiles[n]);
+		other_lake->RemoveLakeTile(new_tiles[n]);
+
+		if (GetTileZ(new_tiles[n]) <= max_height) {
+			this->tile_to_lake[new_tiles[n]] = lake;
+			lake->AddLakeTile(new_tiles[n]);
+		} else {
+			DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".................... Ignoring tile (%i,%i) since it is higher than the conuming lake: %i > %i",
+					  TileX(new_tiles[n]), TileY(new_tiles[n]), GetTileZ(new_tiles[n]), max_height);
+		}
+	}
+
+	/* Unprocessed edge tiles need to be recalculated now */
+	this->RecalculateUnprocessedEdgeTiles(lake);
+
+	DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Finished consuming lake, increased flow at (%i,%i) by %i to %i",
+			  TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()), other_lake_flow, this->water_flow[lake->GetCenterTile()]);
+
+	return other_lake_flow;
+}
+
+/** Clears and recalculates the unprocessed edge tiles of the given lake.
+ *  @param lake some Lake
+ */
+void DefineLakesIterator::RecalculateUnprocessedEdgeTiles(Lake *lake)
+{
+	lake->ClearUnprocessedEdgeTiles();
+
+	for (std::set<TileIndex>::const_iterator it = lake->GetLakeTilesBegin(); it != lake->GetLakeTilesEnd(); it++) {
+		TileIndex tile = *it;
+		this->RegisterAppropriateNeighborTilesAsUnprocessed(lake, tile, lake->GetSurfaceHeight());
+	}
+}
+
+
+/** This function checks, wether for all lake centers of the given lake, a path of at most the given height exists
+ *  to the outflow tile.  If no such path exists, one is terraformed.
+ *  @param lake some lake
+ *  @param outflow_tile the outflow tile
+ *  @param desired_height desired heightlevel of path
+ */
+void DefineLakesIterator::TerraformPathsFromCentersToOutflow(Lake *lake, TileIndex outflow_tile, int desired_height)
+{
+	std::set<TileIndex>* lake_tiles = lake->GetLakeTiles();
+	for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
+		TileIndex tile = *it;
+		if (IsLakeCenter(this->water_info, tile)) {
+			std::vector<TileIndex> path_tiles = std::vector<TileIndex>();
+			bool success = RainfallRiverGenerator::CalculateLakePath(*lake_tiles, tile, outflow_tile, path_tiles, desired_height);
+			if (success) {
+				DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, "Found a path with max height %i from center tile (%i,%i) to outflow tile (%i,%i), thus there is no need to terraform one.",
+							desired_height, TileX(tile), TileY(tile), TileX(outflow_tile), TileY(outflow_tile));
+			} else {
+				success = RainfallRiverGenerator::CalculateLakePath(*lake_tiles, tile, outflow_tile, path_tiles, -1);
+				if (success) {
+					for (int z = 0; z < (int)path_tiles.size(); z++) {
+						TerraformTileToSlope(path_tiles[z], desired_height, SLOPE_FLAT);
+							DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, "Digging a outflow canyon: Terraforming (%i,%i) to height %i",
+										  TileX(path_tiles[z]), TileY(path_tiles[z]), lake->GetSurfaceHeight());
+					}
+				} else {
+					DEBUG(map, 0, "WARNING: Could not connect tile (%i,%i) with outflow tile (%i,%i) in lake, this should not happen as lakes are supposed to be connected.",
+								  TileX(tile), TileY(tile), TileX(outflow_tile), TileY(outflow_tile));
+				}
+			}
+		}
+	}
+}
+
+/** This function registers all neighbor tiles of the given tile, with at most the given height, which are not yet
+ *  part of the lake, as unregistered edge tiles, i.e. candidate tiles for expanding the lake.
+ *  @param lake some lake
+ *  @parma tile some tile
+ *  @param ref_height height limit as described
+ */
+void DefineLakesIterator::RegisterAppropriateNeighborTilesAsUnprocessed(Lake *lake, TileIndex tile, int ref_height)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+
+	/* Determine not higher straight neighbor tiles.  Those are suitable for exanding the lake in this step. */
+	StoreStraightNeighborTiles(tile, neighbor_tiles);
+	this->DiscardLakeNeighborTiles(tile, neighbor_tiles, ref_height);
+
+	/* Record all found suitable neighbor tiles for later processing.  But only if they are not yet lake tiles. */
+	for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+		if (neighbor_tiles[n] != INVALID_TILE && !lake->IsLakeTile(neighbor_tiles[n])) {
+			lake->RegisterUnprocessedEdgeTile(neighbor_tiles[n]);
+		}
+	}
+}
+
+/** Creates a lake at the given tile, which is supposed to be a lake center.  Optionally adds extra flow
+ *  gained from lakes somewhere up in the mountains.
+ *  This function calls itself recursively for each Lake along a path from the given tile to
+ *  (1) the sea, or
+ *  (2) a lake for which no outflow can be found, or
+ *  (3) the map edge
+ *  Bookkeeping in the passed LakeDefinitionState assures that no endless recursion can occur.
+ *  @param tile some lake center tile
+ *  @param state LakeDefinitionState, see there
+ *  @param extra_flow extra flow gained from a lake upwards in the mountains, or 0 if we start at this lake
+ */
+void DefineLakesIterator::CreateLake(TileIndex tile, LakeDefinitionState &state, int extra_flow)
+{
+	DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "CREATE_LAKE for (%i,%i), extra_flow %i", TileX(tile), TileY(tile), extra_flow);
+
+	bool already_processed = tile_to_lake.find(tile) != tile_to_lake.end();
+	state.MarkProcessed(tile);
+	Lake *lake;
+	if (!already_processed) {
+		/* Lake wasn´t processed yet, create a new Lake instance */
+		lake = new Lake(tile);
+		this->all_lakes.push_back(lake);
+		lake->RegisterUnprocessedEdgeTile(tile);
+		this->tile_to_lake[tile] = lake;
+		DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Created new Lake instance for (%i,%i) since none was constructed yet.", TileX(tile), TileY(tile));
+	} else {
+		/* Reprocess existing Lake instance, iterate until we are sure that we found the lake center, and not just a consumed lake center of that Lake. */
+		TileIndex prev_tile;
+		do {
+			lake = this->tile_to_lake[tile];
+			prev_tile = tile;
+			tile = lake->GetCenterTile();
+			state.MarkProcessed(tile);
+			DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Reusing existing lake instance, delegating to (%i,%i)", TileX(tile), TileY(tile));
+		} while (tile != prev_tile);
+
+		/* If the Lake was already finished without outflow, do nothing, the flow simply disappears.  This is the case, if the Lake has already hit the map border. */
+		if (lake->WasFinishedWithoutOutflow()) {
+			return;
+		}
+	}
+
+	lake->PrintToDebug(RAINFALL_DEFINE_LAKES_LOG_LEVEL, 9);
+
+	LakeDefinitionRun run = LakeDefinitionRun(lake, extra_flow);
+	state.StartRun(run);
+
+	/* Add new flow */
+	this->water_flow[tile] += extra_flow;
+
+	/* Array used for storing neighbor tiles of some tile.
+	 */
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+
+	/* The height we currently process.  We only choose tiles with at most that height, for expanding the lake.
+	 * If we run out of tiles, have remaining_flow left, but not yet found an out-flow, we increase that height,
+	 * i.e., we increase the depth of the lake.
+	 */
+	int ref_height = lake->GetSurfaceHeight();
+
+	/* Do not consider extra_flow here, as in recursive calls (the only case where it is set, i.e. != 0) it is
+	 * already added when processing the outflow tiles.
+	 */
+	int total_flow = this->water_flow[tile];
+
+	/* Flow that remains to be distributed on the lake tiles */
+	int remaining_flow = total_flow - lake->GetAlreadySpentFlow();
+
+	DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... total_flow = %i, remaining_flow = %i - %i = %i", total_flow, total_flow, lake->GetAlreadySpentFlow(), remaining_flow);
+
+	/* The outflow tile might lead to Lake, whose outflow goes back to our Lake.  This can happen, if both lakes have
+	 * the same surface height, and is a within our concept legal situation.  In that case, go through the whole
+	 * Lake expansion code again, and maybe find another outflow tile.
+	 */
+	Lake *destination_lake = this->GetDestinationLake(lake->GetOutflowTile());
+	if (destination_lake != NULL && state.WasAlreadyProcessed(destination_lake->GetCenterTile())) {
+		lake->SetOutflowTile(INVALID_TILE);
+	}
+
+	/* Get the outflow tile of the lake.  If the lake was already processed before, and an outflow tile was found,
+	 * use that one, and skip the whole lake expansion code.  The additional flow then simply goes through the lake,
+	 * without changing its extent any further.
+	 * If no outflow tile was found so far (case INVALID_TILE), we extend the lake until we either run out of flow,
+	 * or find an outflow tile.
+	 */
+	TileIndex outflow_tile = lake->GetOutflowTile();
+
+	if (outflow_tile != INVALID_TILE) {
+		DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Found already calcuted outflow tile (%i,%i) and will use it, total_flow = %i, already_processed = %i",
+													 TileX(outflow_tile), TileY(outflow_tile), total_flow, lake->GetAlreadyProcessedOutflow());
+	} else {
+		if (lake->AreUnprocessedEdgeTilesDirty()) {
+			this->RecalculateUnprocessedEdgeTiles(lake);
+			lake->SetUnprocessedEdgeTilesDirty(false);
+		}
+
+		DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ No outflow tile was already found, will expand lake, total_flow = %i, already_processed = %i",
+													 total_flow, lake->GetAlreadyProcessedOutflow());
+
+		/* Iterate until all flow is distributed, or an outflow tile is found.  The max heightlevel condition is for
+		 * real corner cases, e.g. if the whole map is one single volcano, and flow_per_lake_volume is set to zero, the whole
+		 * map might fill with water and the surface height might grow forever.  Quite improbable, but make sure that his doesn´t kill the algorithm...
+		 */
+		while (remaining_flow >= _settings_newgame.game_creation.rainfall.flow_per_lake_volume && outflow_tile == INVALID_TILE && ref_height < _settings_game.construction.max_heightlevel) {
+			/* Tiles we want to process in this iteration of the algorithm.  Is a subset of the unprocessed_edge_tiles set above,
+			 * to introduce some assymmetry (we don´t just expand in circles, but expand sometimes here and sometimes there).
+			 * But do always declare tiles to lake tiles, that have sufficient flow for a river.  We don´t want river tiles in the
+			 * middle of a lake.  They would just confuse following algorithms e.g. for lake modification.
+			 */
+			std::vector<TileIndex> tiles_this_time = std::vector<TileIndex>();
+			for (std::set<TileIndex>::const_iterator it = lake->GetUnprocessedEdgeBegin(); it != lake->GetUnprocessedEdgeEnd(); it++) {
+				if (this->water_flow[*it] >= _settings_newgame.game_creation.rainfall.flow_for_river || RandomRange(3) == 1) {
+					tiles_this_time.push_back(*it);
+				}
+			}
+
+			/* If our probabilistic approach above didn´t choose any tile, most probably just a few candidate tiles are left, thus choose them all.
+			 */
+			if (tiles_this_time.size() == 0) {
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Choosing all these tiles.");
+				for (std::set<TileIndex>::const_iterator it = lake->GetUnprocessedEdgeBegin(); it != lake->GetUnprocessedEdgeEnd(); it++) {
+					tiles_this_time.push_back(*it);
+				}
+			} else {
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Choosing " PRINTF_SIZE " tiles by random", tiles_this_time.size());
+			}
+
+			/* Process all chosen tiles, expanding the lake or eventually finding a suitable out-flow tile.
+			 */
+			for (std::vector<TileIndex>::const_iterator it = tiles_this_time.begin(); it != tiles_this_time.end(); it++) {
+				TileIndex curr_tile = *it;
+
+				/* Mark the tile as being processed. */
+				lake->UnregisterUnprocessedEdgeTile(curr_tile);
+
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Declared tile (%i,%i) a lake tile, total_flow = %i, remaining_flow is %i",
+									TileX(curr_tile), TileY(curr_tile), total_flow, remaining_flow);
+
+				/* Check wether the tile is already part of a lake. */
+				if (this->tile_to_lake.find(curr_tile) != this->tile_to_lake.end()) {
+
+					/* If yes, and it´s not part of our lake, then we have to take care of it.  If it´s already
+					 * part of our lake, nothing is to be done here.
+					 */
+					Lake *other_lake = this->tile_to_lake[curr_tile];
+					if (other_lake != lake) {
+						/* Consume the lake */
+						if (lake->GetNumberOfLakeTiles() < other_lake->GetNumberOfLakeTiles()) {
+							/* As consuming involves moving tiles around between the different containers, always
+							 * consume the smaller lake by the bigger one.  If the current lake is smaller than the other lake,
+							 * exchange the two, i.e. we proceed with the other lake, and consume the current one.
+							 */
+
+							DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, "Current lake (%i,%i) has less tiles (" PRINTF_SIZE " < " PRINTF_SIZE ") than the other lake (%i,%i); will switch lakes for consuming",
+											TileX(tile), TileY(tile),
+											lake->GetLakeTiles()->size(), other_lake->GetLakeTiles()->size(),
+											TileX(other_lake->GetCenterTile()), TileY(other_lake->GetCenterTile()));
+							DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, ".... total_flow = %i, remaining_flow = %i, our_already_processed = %i, other_already_processed = %i",
+									  total_flow, remaining_flow, lake->GetAlreadySpentFlow(), other_lake->GetAlreadySpentFlow());
+							DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, ".... other_lake_outflow: %i", other_lake->GetOutflowTile() != INVALID_TILE);
+							DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, ".... flow at our lake tile %i, at other lake tile %i", this->water_flow[tile], this->water_flow[other_lake->GetCenterTile()]);
+
+							/* The tile is now the center tile of the other lake */
+							tile = other_lake->GetCenterTile();
+
+							/* Mark the center tile of the other lake also processed, i.e. we will not recognize it for outflow etc. */
+							state.MarkProcessed(tile);
+
+							/* ConsumeLake expects a situation, where the tile at hand is in the other lake.  Thus, we transfer it to our lake,
+							 * before it will be consumed by ConsumeLake.
+							 */
+							tile_to_lake.erase(curr_tile);
+							tile_to_lake[curr_tile] = lake;
+							other_lake->RemoveLakeTile(curr_tile);
+							lake->AddLakeTile(curr_tile);
+
+							/* The flow the other lake has left to distribute.  Note that if an outflow tile was already found,
+							 * this will lead to a remaining flow that does not actually reflect the size of the lake.
+							 * But this is no harm, as in that case we will stop expanding the lake immediately anyway.
+							 */
+							int remaining_other_lake_flow = this->water_flow[tile] - other_lake->GetAlreadySpentFlow();
+
+							/* The flow of the consumed lake, in this case of the current lake.  Calculates as "total flow minus already processed outflow".
+							 */
+							int extra_flow = this->ConsumeLake(other_lake, curr_tile, ref_height, state, run);
+
+							/* Add the extra flow for the other lake.  If the other_lake flows into our lake, extra_flow is zero since ConsumeLake detects that.
+							 * (the other way round is impossible, since our lake hasn´t yet an outflow, otherwise we wouldn´t be in that code).
+							 * In that case, we have to take the water_flow of our lake, since it is the lake downwards which likely collected more flow from
+							 * other sources which we don´t want to discard.
+							 */
+							this->water_flow[tile] = (extra_flow == 0 ? this->water_flow[lake->GetCenterTile()] : this->water_flow[tile] + extra_flow);
+
+							/* We have consumed some flow in this run of the function, for the tiles declared lake tiles so far.  Also, the other lake has
+							 * already spent some flow for its tiles.  Don´t count the latter, if that lake actually flows into our lake.
+							 */
+							int already_consumed_flow = this->water_flow[tile] - remaining_flow - (extra_flow == 0 ? 0 : remaining_other_lake_flow);
+
+							/* The total flow is the sum of the flow of both lakes; this->water_flow[tile] was already corrected inside ConsumeLake */
+							total_flow = this->water_flow[tile];
+
+							/* Subtract the already spent flow to get the remaining flow */
+							remaining_flow = total_flow - already_consumed_flow;
+
+							DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL,
+											".... Calculated: already_consumed_flow = %i, total_flow_new = %i, remaining_flow_new = %i, other_center_flow = %i",
+											already_consumed_flow, total_flow, remaining_flow, this->water_flow[tile]);
+
+							/* Finally switch the lake instances */
+							Lake *tmp_lake = lake;
+							lake = other_lake;
+							other_lake = tmp_lake;
+							DeclareActiveLakeCenter(this->water_info, lake->GetCenterTile());
+							DeclareConsumedLakeCenter(this->water_info, other_lake->GetCenterTile());
+
+							/* Maybe the other lake has already found an outflow tile, then we take that one.  This essentially stops expanding the lake. */
+							if (extra_flow != 0) {
+								outflow_tile = lake->GetOutflowTile();
+								DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, ".... Actually adding the other lake flow, since it´s flow doesn´t end in our lake");
+							} else {
+								DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, ".... Dropping already calculated outflow tile since it ends in our lake, resetting alreadyProcessedOutflow to 0");
+								lake->SetAlreadyProcessedOutflow(0);
+								lake->SetOutflowTile(INVALID_TILE);
+								outflow_tile = INVALID_TILE;
+							}
+						} else {
+							int extra_flow = this->ConsumeLake(lake, curr_tile, ref_height, state, run);
+							total_flow += extra_flow;
+							remaining_flow += (extra_flow == 0 ? 0 : extra_flow - other_lake->GetAlreadySpentFlow());
+							this->water_flow[tile] += extra_flow;
+
+							if (extra_flow != 0) {
+								DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, ".... Actually adding the other lake flow, since it´s flow doesn´t end in our lake");
+							}
+
+							DEBUG(map, RAINFALL_CONSUME_LAKES_LOG_LEVEL, "Adding other_lake_flow %i, total_flow now %i, remaining %i, already spent %i, tile (%i,%i), at tile %i",
+										extra_flow, total_flow, remaining_flow, other_lake->GetAlreadySpentFlow(), TileX(tile), TileY(tile), this->water_flow[lake->GetCenterTile()]);
+						}
+
+						/* During lake consumption, the set of unprocessed edge tiles has to be reprocessed
+						 * (since some of them are already processed by the consumed lake, whereas others have to be added
+						 *  newly as part of the edge of the consumed lake)
+						 * In any case: tiles_this_time is not longer valid at this time, thus we abort the loop, and start
+						 * again based on the newly calculated set of unprocessed edge tiles.
+						 */
+						break;
+					}
+				} else if (IsActiveLakeCenter(this->water_info, curr_tile)) {
+					/* A not yet processed active lake center, just process it. */
+					DeclareConsumedLakeCenter(this->water_info, curr_tile);
+					this->RegisterLakeTile(curr_tile, lake);
+
+					remaining_flow += this->water_flow[curr_tile];
+					total_flow += this->water_flow[curr_tile];
+					this->water_flow[tile] += this->water_flow[curr_tile];
+					DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Declaring not yet processed active lake center consumed, additional flow %i", this->water_flow[curr_tile]);
+				} else if (ref_height >= state.GetMinSurfaceHeight() && this->DoesFlowEndOutsideLake(curr_tile, lake, state)) {
+					/* Check wether this tile offers an out-flow out of the lake.  If yes, stop processing here, and let all the water flow there.
+					 * (note: due to the probabilistic element of the algorithm above, we really have to check the whole path,
+					 *        as we might easily see the situation that water flows out the already processed region, and enters
+					 *        it via a not-yet-processed tile again.)
+					 */
+					state.DropMinSurfaceHeight();
+
+					outflow_tile = curr_tile;
+					DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "........ Declared tile (%i,%i) the outflow_tile.", TileX(outflow_tile), TileY(outflow_tile));
+					break;
+				}
+
+				remaining_flow -= _settings_newgame.game_creation.rainfall.flow_per_lake_volume;
+
+				/* We might find two lake centers within one call of this method.  Simply remove the second one,
+				 * and add its flow to the first one.
+				 */
+
+				this->RegisterAppropriateNeighborTilesAsUnprocessed(lake, curr_tile, ref_height);
+
+				/* Explicitely do not declare the outflow tile a lake tile.  It can live perfectly as river, and if it
+				 * would be a lake tile, it would frequently trigger lake consumptions where in fact the upper lake
+				 * just is a direct neighbor of the lower lake via the outflow tile.
+				 */
+				lake->AddLakeTile(curr_tile);
+				this->tile_to_lake[curr_tile] = lake;
+				if (!IsLakeCenter(this->water_info, curr_tile)) {
+					DeclareOrdinaryLakeTile(this->water_info, curr_tile);
+				}
+			}
+
+			/* Last, if no unprocessed_edge_tiles are left for the next iteration, but there is flow left, increase ref_height, decrease
+			 * the remaining_flow accordingly (all already processed tiles now count again with FLOW_PER_LAKE_VOLUME).
+			 */
+			if (outflow_tile == INVALID_TILE && lake->GetNumberOfUnprocessedEdgeTiles() == 0 && remaining_flow >= _settings_newgame.game_creation.rainfall.flow_per_lake_volume) {
+				/* If the above loop has hit the map edge, and we would have to increase the surface height, instead abort lake generation.
+				 * We wait until here to avoid generating lakes that hit the map edge with just one tile, it probably looks better if the lake
+				 * approaches the map edge with all tiles possible at that surface height.
+				 * Then, however, we have to abort, as otherwise on maps without sea, this could lead to lakes consuming the whole landscape,
+				 * as they increase their surface height all the time, without finding any outflow to the sea.
+				 */
+				if (lake->WasFinishedWithoutOutflow()) {
+					break;
+				}
+
+				/* No tiles are left, but not all flow has yet been processed.
+				 * Increase the height (i.e. increase the lake depth), and find all tiles that are now appropriate for the lake.
+				 */
+				ref_height++;
+				lake->SetSurfaceHeight(ref_height);
+
+				remaining_flow -= lake->GetNumberOfLakeTiles() * _settings_newgame.game_creation.rainfall.flow_per_lake_volume;
+
+				/* Fill the unprocessed edge tiles set with the tiles for the next level. */
+				std::set<TileIndex>* lake_tiles = lake->GetLakeTiles();
+				for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
+					TileIndex curr_tile = *it;
+					DEBUG(map, 9, "........ Checking for neighbor tiles of tile (%i,%i)", TileX(curr_tile), TileY(curr_tile));
+					StoreStraightNeighborTiles(curr_tile, neighbor_tiles);
+					this->DiscardLakeNeighborTiles(curr_tile, neighbor_tiles, ref_height);
+					for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+						if (neighbor_tiles[n] != INVALID_TILE) {
+							DEBUG(map, 9, "............ Checking neighbor tile (%i,%i), found = %i", TileX(neighbor_tiles[n]), TileY(neighbor_tiles[n]),
+										lake_tiles->find(neighbor_tiles[n]) == lake_tiles->end());
+							if (!lake->IsLakeTile(neighbor_tiles[n])) {
+								lake->RegisterUnprocessedEdgeTile(neighbor_tiles[n]);
+							}
+						}
+					}
+				}
+
+				if (lake->GetNumberOfUnprocessedEdgeTiles() == 0) {
+					DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "====> ABORT: Did not find another suitable neighbor tile, although remaining_flow is left.");
+					break;
+				}
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... No tiles were left, increasing ref_height to %i, remaining_flow is %i, and starting again with %i tiles.",
+															 ref_height, remaining_flow, lake->GetNumberOfUnprocessedEdgeTiles());
+			} else {
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... %i tiles are left with remaining_flow %i", lake->GetNumberOfUnprocessedEdgeTiles(), remaining_flow);
+			}
+		}
+
+		lake->SetSurfaceHeight(ref_height);
+	}
+
+	/* If there is an outflow tile, we have to treat the water flowing out of the lake correctly.
+	 * Follow the flow, and have a look what happens to that water.
+	 */
+	if (outflow_tile != INVALID_TILE) {
+		/*  There is a corner case, where lake A has an outflow to lake B (the lake calculated in this run of the function),
+		 *  and both are situated in a bigger basin.  Then, lake B needs a higher outflow than the surface height of lake A
+		 *  to escape from the basin.  This, in essence, would mean a river flowing upwards, which is ugly.
+		 *  Our strategy is lowering the lake outflow such that things flow downwards, by terraforming a canyon through the
+		 *  barrier at the outflow.
+		 *  Furthermore, we do the same by chance with some given probability.  This essentially removes the lakes, and if
+		 *  one sets the probability to 100 percent, then one will get a map with just rivers, but no real lakes.
+		 *  That trick might be useful if heightmaps etc. have more basins than desired.
+		 */
+		int prev_lake_height = state.WasPreviousLakeLower();
+		int new_lake_height;
+		if (prev_lake_height != -1) {
+			DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Lake is higher than the previous one, will terraform paths to outflow tile (%i,%i) to height %i",
+														TileX(outflow_tile), TileY(outflow_tile), prev_lake_height);
+			new_lake_height = prev_lake_height;
+		} else {
+			if (RandomRange(MAX_RAINFALL_PROBABILITY) < _settings_newgame.game_creation.rainfall.lake_outflow_canyon_probability) {
+				TileIndex center_tile = lake->GetCenterTile();
+
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Choosing lake (%i,%i) to lower it to its center height by chance, will dig an outflow canyon.",
+															  TileX(center_tile), TileY(center_tile));
+				new_lake_height = GetTileZ(center_tile);
+			} else {
+				new_lake_height = -1;
+			}
+		}
+
+		if (new_lake_height != -1) {
+			/* We will lower the lake surface height below, ensure that this doesn´t split the lake into pieces unreachable
+			 * from the outflow.  Do this by terraforming appropriate paths to the desired height right here.
+			 */
+			this->TerraformPathsFromCentersToOutflow(lake, outflow_tile, new_lake_height);
+
+			/* Remove all tiles that are planned to be higher than the desired height from the lake.  Our terraforming
+			 * activities above guarantee that the lake still spans till the outflow.
+			 */
+			lake->SetSurfaceHeight(new_lake_height);
+			lake->AddLakeTile(outflow_tile);
+			this->tile_to_lake[outflow_tile] = lake;
+			if (!IsLakeCenter(this->water_info, outflow_tile)) {
+				DeclareOrdinaryLakeTile(this->water_info, outflow_tile);
+			}
+
+			/* Reset the unprocessed edge tiles. */
+			lake->ClearUnprocessedEdgeTiles();
+			std::set<TileIndex>* lake_tiles = lake->GetLakeTiles();
+			for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
+				TileIndex tile = *it;
+				TerraformTileToSlope(tile, lake->GetSurfaceHeight(), SLOPE_FLAT);
+				DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, "Terraforming tile (%i,%i) to surface height %i during outflow path treatment.", TileX(tile), TileY(tile), lake->GetSurfaceHeight());
+				this->RegisterAppropriateNeighborTilesAsUnprocessed(lake, tile, lake->GetSurfaceHeight());
+			}
+
+			/* The last step is terraforming all tiles along the outflow path to the desired height, if they are higher.
+			 * As we iterate over that path anyway below, this isn´t done right here.
+			 * Note that we do this for all tile until including a lake center the path ends at.  This might lower the
+			 * next lake center, i.e. we might have the same situation again in the next run of CreateLake, which is no
+			 * harm.
+			 */
+		}
+
+		lake->SetOutflowTile(outflow_tile);
+
+		int already_processed_outflow = lake->GetAlreadyProcessedOutflow();
+
+		TileIndex curr_out_tile = outflow_tile;
+		int added_flow = total_flow - already_processed_outflow;
+
+		DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... alreadyProcessedOutflow = %i, alreadySpentOutflow = %i, totalFlow = %i, addedFlow = %i, remaining_flow = %i, newSpentFlow = %i",
+											already_processed_outflow, lake->GetAlreadySpentFlow(), total_flow, added_flow, remaining_flow, total_flow - remaining_flow);
+
+		lake->SetAlreadySpentFlow(total_flow - remaining_flow);
+		lake->SetAlreadyProcessedOutflow(total_flow);
+
+		this->water_flow[curr_out_tile] += added_flow;
+		DEBUG(map, 9, ".... Processing out-flow: Increasing flow at (%i,%i), for lake (%i,%i) by %i to %i; total_flow = %i", TileX(curr_out_tile), TileY(curr_out_tile),
+													TileX(tile), TileY(tile), added_flow, this->water_flow[curr_out_tile], total_flow);
+
+		/* Now, finally, step through the whole outflow path until it ends in the sea, at the map edge, or the next lake.
+		 * In the later case, process that lake by a recursive call to this function.
+		 */
+		std::set<TileIndex> processed_tiles = std::set<TileIndex>();
+		while ((!IsTileType(curr_out_tile, MP_WATER) || IsCoastTile(curr_out_tile)) && !IsDisappearTile(this->water_info, curr_out_tile)) {
+			DEBUG(map, 9, "Processing outflow tile (%i,%i)", TileX(curr_out_tile), TileY(curr_out_tile));
+
+			curr_out_tile = AddFlowDirectionToTile(curr_out_tile, this->water_info[curr_out_tile]);
+			if (curr_out_tile == INVALID_TILE) {
+				/* Outflow path ended e.g. at the map edge */
+				break;
+			}
+
+			/* Mainly safety for debugging.  Per definition, flow is non-circular, but if there is a bug somewhere this condition might be violated.
+		     * Detecting and fixing such cases is easier if map generation does not abort in an endless loop, and one may actually see and inspect
+			 * the problematic landscape at hand.
+			 */
+			if (processed_tiles.find(curr_out_tile) != processed_tiles.end()) {
+				DEBUG(map, 0, "WARNING: CIRCULAR FLOW. circular.  Near tile (%i,%i)", TileX(curr_out_tile), TileY(curr_out_tile));
+				break;
+			} else {
+				processed_tiles.insert(curr_out_tile);
+			}
+
+			if ((IsTileType(curr_out_tile, MP_WATER) && !IsCoastTile(curr_out_tile))) {
+				/* We have reached the coast, there is nothing to be done left. */
+				break;
+			}
+
+			if (!IsLakeCenter(this->water_info, curr_out_tile)) {
+				/* Increase flow along outflow path. */
+				this->water_flow[curr_out_tile] += added_flow;
+				DEBUG(map, 9, ".... Processing out-flow: Increasing flow at (%i,%i) by %i to %i", TileX(curr_out_tile), TileY(curr_out_tile),
+															 added_flow, this->water_flow[curr_out_tile]);
+			}
+
+			/* Terraform outflow tiles to form a canyon through a possibly existing barrier at the lake outflow, if necessary.  Generally, we create an outflow
+			 * path only along a flow, leading downwards, but during lake generation, e.g. lake A can flow into lake B of higher surface height, resulting in
+			 * a decreased surface height of lake B, resulting in a too high outflow tile.  For such cases, we check the height of the outflow path tiles,
+			 * and lower them if necessary.
+			 * Note that the height of the previous lakes is checked using state.WasPreviousLakeLower above, i.e. here all we have to do is checking the river tiles
+		     * along the outflow.
+			 */
+			if (GetTileZ(curr_out_tile) > lake->GetSurfaceHeight()) {
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Terraforming outflow path tile (%i,%i) to height %i in order to get a canyon for the outflow.",
+															  TileX(curr_out_tile), TileY(curr_out_tile), prev_lake_height);
+				TerraformTileToSlope(curr_out_tile, lake->GetSurfaceHeight(), SLOPE_FLAT);
+				if (!IsLakeCenter(this->water_info, curr_out_tile)) {
+					DeclareRiver(this->water_info, curr_out_tile);
+				}
+			}
+
+			if (IsDisappearTile(this->water_info, curr_out_tile)) {
+				/* We have hit map edge */
+				break;
+			} else if (IsLakeCenter(this->water_info, curr_out_tile)) {
+				/* The water flows into another lake.  Thus we process that one.
+				 */
+				if (!state.WasAlreadyProcessed(curr_out_tile)) {
+					DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Outflow found a in this run not yet processed lake center at (%i,%i), recursively (re)processing it.",
+								  TileX(curr_out_tile), TileY(curr_out_tile));
+					CreateLake(curr_out_tile, state, added_flow);
+				}
+				break;
+			}
+		}
+	} else {
+		/* If no outflow was found, at least record the flow we have already spent for adding water tiles. */
+		lake->SetAlreadySpentFlow(total_flow - remaining_flow);
+	}
+}
+
+void DefineLakesIterator::ProcessTile(TileIndex tile, Slope slope)
+{
+	if (water_flow[tile] >= _settings_newgame.game_creation.rainfall.flow_for_river) {
+		if (IsActiveLakeCenter(this->water_info, tile) && this->tile_to_lake.find(tile) == this->tile_to_lake.end()) {
+			/* The flow iterator has declared this a lake.  This means, this is a tile where it wasn´t able to find any
+			 * neighbor tile suitable for an outflow.  Our task here is
+			 * (1) modify landscape to make this a real lake (i.e. increase landscape to form a flat area, until the
+			 *     lake volume is sufficient for the in-flow, or an out-flow can be found
+			 * (2) Define all those tiles lake-tiles
+			 * (3) If an out-flow was found, follow its flow, and recalculate the flow values, maybe declaring additional
+			 *     tiles river tiles.
+			 */
+			LakeDefinitionState lake_definition_state = LakeDefinitionState();
+			this->CreateLake(tile, lake_definition_state);
+			this->create_lake_runs++;
+		}
+	}
+}
+
+DefineLakesIterator::DefineLakesIterator(HeightIndex *height_index, int *number_of_lower_tiles, int *water_flow, byte *water_info) : HeightLevelIterator(height_index)
+{
+	DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "Totally created %i lakes", this->create_lake_runs);
+	this->number_of_lower_tiles = number_of_lower_tiles;
+	this->water_flow = water_flow;
+	this->water_info = water_info;
+	this->tile_to_lake = std::map<TileIndex, Lake*>();
+	this->lake_connected_component_calculator = new LakeConnectedComponentCalculator(this->water_info);
+}
+
+DefineLakesIterator::~DefineLakesIterator()
+{
+	for (uint n = 0; n < this->all_lakes.size(); n++) {
+		delete this->all_lakes[n];
+	}
+	delete this->lake_connected_component_calculator;
+}
+
+/* ================================================================================================================== */
 /* ================================ RainfallRiverGenerator ========================================================== */
 /* ================================================================================================================== */
 
@@ -721,6 +1693,7 @@ void RainfallRiverGenerator::RemoveSmallBasins(int *number_of_lower_tiles)
 
 std::vector<TileIndex>* RainfallRiverGenerator::found_path;
 std::set<TileIndex>* RainfallRiverGenerator::lake_tiles;
+int RainfallRiverGenerator::max_height;
 
 int32 RainfallRiverGenerator::LakePathSearch_EndNodeCheck(AyStar *aystar, OpenListNode *current)
 {
@@ -746,8 +1719,10 @@ void RainfallRiverGenerator::LakePathSearch_GetNeighbours(AyStar *aystar, OpenLi
 	aystar->num_neighbours = 0;
 	for (int n = DIR_BEGIN; n < DIR_END; n++) {
 		/* Only accept lake tiles, or the outflow tile.  Detect the outflow tile by checking user_target (it is in generally not part of the lake). */
-		if (neighbor_tiles[n] != INVALID_TILE && (RainfallRiverGenerator::lake_tiles->find(neighbor_tiles[n]) != RainfallRiverGenerator::lake_tiles->end()
-													|| neighbor_tiles[n] == *(TileIndex*)aystar->user_target)) {
+		if (neighbor_tiles[n] != INVALID_TILE
+			&& (RainfallRiverGenerator::max_height == -1 || GetTileZ(neighbor_tiles[n]) <= RainfallRiverGenerator::max_height)
+			&& (RainfallRiverGenerator::lake_tiles->find(neighbor_tiles[n]) != RainfallRiverGenerator::lake_tiles->end()
+									|| neighbor_tiles[n] == *(TileIndex*)aystar->user_target)) {
 			aystar->neighbours[aystar->num_neighbours].tile = neighbor_tiles[n];
 			aystar->neighbours[aystar->num_neighbours].direction = INVALID_TRACKDIR;
 			aystar->num_neighbours++;
@@ -757,6 +1732,7 @@ void RainfallRiverGenerator::LakePathSearch_GetNeighbours(AyStar *aystar, OpenLi
 
 void RainfallRiverGenerator::LakePathSearch_FoundEndNode(AyStar *aystar, OpenListNode *current)
 {
+	RainfallRiverGenerator::found_path->clear();
 	for (PathNode *path = &current->path; path != NULL; path = path->parent) {
 		TileIndex tile = path->node.tile;
 		RainfallRiverGenerator::found_path->push_back(tile);
@@ -772,10 +1748,11 @@ uint RainfallRiverGenerator::LakePathSearch_Hash(uint tile, uint dir)
  *  between the two tiles, and stores the result in the vector given by reference.
  *  @return wether a path could be found
  */
-bool RainfallRiverGenerator::CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles)
+bool RainfallRiverGenerator::CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height)
 {
 	RainfallRiverGenerator::found_path = &path_tiles;
 	RainfallRiverGenerator::lake_tiles = &lake_tiles;
+	RainfallRiverGenerator::max_height = max_height;
 
 	AyStar finder;
 	MemSetT(&finder, 0);
@@ -807,6 +1784,7 @@ bool RainfallRiverGenerator::CalculateLakePath(std::set<TileIndex> &lake_tiles, 
  *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
  *  (3) Recalculate HeightIndex and NumberOfLowerTiles, as step (2) performed terraforming, and thus invalidated them.
  *  (4) Calculate flow.  Each tiles gains one unit of flow, while flowing downwards, it sums up.
+ *  (6) Define lakes, i.e. decide which lake covers which tiles, and decide about the lake surface height.
  */
 void RainfallRiverGenerator::GenerateRivers()
 {
@@ -836,6 +1814,16 @@ void RainfallRiverGenerator::GenerateRivers()
 	}
 	int *water_flow = flow_iterator->GetWaterFlow();
 	byte *water_info = flow_iterator->GetWaterInfo();
+
+	/* (6) Define lakes, i.e. decide which tile is assigned to which lake, and which surface height lakes gain.
+     *     Lakes start growing at points, where the number-of-lower-tiles iterator reported zero lower tiles.
+	 *     Most code here is about correct bookkeeping regarding how much flow flows through the lakes.
+	 *     In particular, the case of joining neighbor lakes is non-trivial with respect to this.
+	 */
+	DefineLakesIterator *define_lakes_iterator = new DefineLakesIterator(height_index, calculated_number_of_lower_tiles, water_flow, water_info);
+	for (int h = _settings_game.construction.max_heightlevel; h >= 0; h--) {
+		define_lakes_iterator->Calculate(h);
+	}
 
 	/* Debug code: Store the results of the iterators in a public array, to be able to query them in the LandInfoWindow.
 	 *             Without that possibility, debugging those values would be really hard. */
@@ -868,6 +1856,7 @@ void RainfallRiverGenerator::GenerateRivers()
 	/*** (Debugging code end ***/
 
 	/* Delete iterators last, as the data arrays constructed by them are in use outside them */
+	delete define_lakes_iterator;
 	delete lower_iterator;
 	delete flow_iterator;
 	delete height_index;
