@@ -120,6 +120,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_FINETUNE_TILES_FULL_LOG_LEVEL 9
 #define RAINFALL_FLOW_MODIFICATION_LOG_LEVEL 9
 #define RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL 9
+#define RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL 0
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -929,6 +930,10 @@ struct TileWithTerraformerState {
  *  before their tiles are actually declared water.  For details, see the extensive comment of function ModifyLake.
  */
 struct LakeModificator {
+
+protected:
+	void DiscardRegion(TileIndex start_tile, int total_number, std::set<TileIndex>* lake_tiles, std::set<TileIndex> &guaranteed_water_tiles, std::set<TileIndex> &discarded_lake_tiles,
+					bool stop_if_guaranteed);
 
 public:
 	virtual ~LakeModificator() {}

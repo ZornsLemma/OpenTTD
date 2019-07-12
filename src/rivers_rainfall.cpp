@@ -2248,6 +2248,90 @@ void RainfallRiverGenerator::ModifyFlow(int *water_flow, byte *water_info) {
 /* ======= Prepare Lakes, Terraform to surface height ====== */
 /* ========================================================= */
 
+/** This function discards a random region of a lake, starting at a given tile.
+ *  @param start_tile start tile of the discarded region
+ *  @param total_number not more than this number of tiles will be discarded
+ *  @param lake_tiles tiles of the lake at hand
+ *  @param guaranteed_water_tiles guaranteed water tiles, they will never be discarded
+ *  @param discarded_lake_tiles set of the so far discarded tiles, will be subsequently expanded
+ *  @param stop_if_guaranteed if this flag is false, the discarded region will expand over guaranteed lake tiles while of course not discarding them.
+ *                            If the flag is true, the neighborhood of such a tile will not be considered for expansion.
+ *                            Example: Tiles AGB, G is guaranteed, starting at A.  B can only be discarded if the flag is false.
+ */
+void LakeModificator::DiscardRegion(TileIndex start_tile, int total_number, std::set<TileIndex>* lake_tiles, std::set<TileIndex> &guaranteed_water_tiles, std::set<TileIndex> &discarded_lake_tiles,
+									bool stop_if_guaranteed)
+{
+	DEBUG(map, RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL, "Will discard a region of at most %i tiles starting at tile (%i,%i)",
+						total_number, TileX(start_tile), TileY(start_tile));
+
+	/* Array that will be filled when the neighbors of a tile are calculated. */
+	TileIndex neighbor_tiles[DIR_COUNT] = { INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE };
+
+	/* Tiles this call to this function has already processed.  We will never inspect a tile twice in one call to the function. */
+	std::set<TileIndex> tiles_already_processed = std::set<TileIndex>();
+
+	/* Tiles that are chosen as candidate tiles for discarding them.  They form the outer boundary of the so far inspected region. */
+	std::set<TileIndex> curr_edge_tiles = std::set<TileIndex>();
+	curr_edge_tiles.insert(start_tile);
+
+	int number_of_tiles_left = total_number;
+
+	/* Expand the region, until either no more tiles can be found, or the limit is reached. */
+	while (curr_edge_tiles.size() > 0 && number_of_tiles_left > 0) {
+
+		/* In each iteration of the while loop, process only a random fraction of the curr_edge_tiles.
+		 * This aims at expanding the region in an irregular way.  If we would always choose all tiles,
+		 * we would form a circle (given that all tiles are suitable).  By choosing just some, we expand
+		 * sometimes here and sometimes there.
+		 */
+		std::vector<TileWithValue> tiles_this_time = std::vector<TileWithValue>();
+		for (std::set<TileIndex>::const_iterator it = curr_edge_tiles.begin(); it != curr_edge_tiles.end(); it++) {
+			if (RandomRange(3) == 0) {
+				tiles_this_time.push_back(TileWithValue(*it, RandomRange(10000)));
+			}
+		}
+
+		/* Also, process the tiles in arbitrary order, in order to exclude any bias
+		 * favouring one direction over another (this might happen, as tiles in a set
+		 * are implicitely sorted by TileIndex, thus without sorting by a random value,
+		 * we would always process them in the same order.
+		 */
+		std::sort(tiles_this_time.begin(), tiles_this_time.end());
+
+		DEBUG(map, RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL, ".... Starting iteration with " PRINTF_SIZE " edge tiles; choosing " PRINTF_SIZE " of them by chance.",
+								curr_edge_tiles.size(), tiles_this_time.size());
+
+		for (int n = 0; n < (int)tiles_this_time.size() && number_of_tiles_left > 0; n++) {
+			TileIndex tile = tiles_this_time[n].tile;
+			DEBUG(map, RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL, "........ Inspecting tile (%i,%i), %i tiles left", TileX(tile), TileY(tile), number_of_tiles_left);
+
+			/* Discard the tile, if not guaranteed and not yet discarded. */
+			if (guaranteed_water_tiles.find(tile) == guaranteed_water_tiles.end() && discarded_lake_tiles.find(tile) == discarded_lake_tiles.end()) {
+				DEBUG(map, RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL, "............. Discarding it.");
+				discarded_lake_tiles.insert(tile);
+				number_of_tiles_left--;
+			}
+
+			curr_edge_tiles.erase(tile);
+			tiles_already_processed.insert(tile);
+
+			StoreStraightNeighborTiles(tile, neighbor_tiles);
+			for (int n = DIR_BEGIN; n < DIR_END; n++) {
+				if (neighbor_tiles[n] != INVALID_TILE) {
+					TileIndex neighbor_tile = neighbor_tiles[n];
+
+					/* Record a neighbor tile if it is member of the lake, not yet processed, and (only if the flag is set) not guaranteed. */
+					if (lake_tiles->find(neighbor_tile) != lake_tiles->end() && tiles_already_processed.find(neighbor_tile) == tiles_already_processed.end()
+							&& (!stop_if_guaranteed || guaranteed_water_tiles.find(neighbor_tile) == guaranteed_water_tiles.end())) {
+						curr_edge_tiles.insert(neighbor_tile);
+						DEBUG(map, RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL, "............. Storing neighbor tile (%i,%i) for later processing.", TileX(neighbor_tile), TileY(neighbor_tile));
+					}
+				}
+			}
+		}
+	}
+}
+
 void OnlyGuaranteedLakeModificator::ModifyLake(Lake *lake, std::map<TileIndex, TileIndex> &inflow_tile_to_center, std::set<TileIndex> &guaranteed_water_tiles,
 													   std::set<TileIndex> &discarded_lake_tiles)
 {
