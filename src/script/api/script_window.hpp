@@ -538,6 +538,12 @@ public:
 		 */
 		WC_RAINFALL_OPTIONS                          = ::WC_RAINFALL_OPTIONS,
 
+		/** Expert options for town placement using the rainfall river generator; %Window numbers:
+		 *   - 0 = #TownRainfallOptions
+		 */
+		WC_TOWN_RAINFALL_OPTIONS                     = ::WC_TOWN_RAINFALL_OPTIONS,
+
+
 		/**
 		 * Progress report of landscape generation; %Window numbers:
 		 *   - 0 = #GenerationProgressWidgets
@@ -1394,6 +1400,12 @@ public:
 		WID_RFO_SHORE_MAX_SIZE_TEXT                  = ::WID_RFO_SHORE_MAX_SIZE_TEXT,                  ///< Max size of shore expansion
 		WID_RFO_SHORE_MAX_SIZE_UP                    = ::WID_RFO_SHORE_MAX_SIZE_UP,                    ///< Increase max size of shore expansion
 	};
+
+	/** Widgets for the expert settings of town placement using the Rainfall River Generator */
+	enum TownRainfallOptionWidgets {
+
+	};
+
 
 	/** Widgets of the #GenerateProgressWindow class. */
 	enum GenerationProgressWidgets {

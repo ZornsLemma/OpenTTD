@@ -617,6 +617,10 @@ struct GenerateLandscapeWindow : public Window {
 				ShowDropDownMenu(this, _game_mode == GM_EDITOR ? _town_placer_editor : _town_placer_game, _settings_newgame.game_creation.town_placer, WID_GL_TOWN_PLACER_PULLDOWN, 0, 0);
 				break;
 
+			case WID_GL_TOWN_PLACER_EXPERT_SETTINGS: // Expert settings for Town Placer
+				ShowTownRainfallOptionsWindow(this);
+				break;
+
 			case WID_GL_TOWN_AMOUNT_PULLDOWN: // Number of towns
 				ShowDropDownMenu(this, _num_towns, _settings_newgame.difficulty.number_towns, WID_GL_TOWN_AMOUNT_PULLDOWN, 0, 0);
 				break;

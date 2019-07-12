@@ -43,6 +43,7 @@ Window *ShowBuildAirToolbar();
 void ShowGenerateLandscape();
 void ShowHeightmapLoad();
 void ShowRainfallOptionsWindow(Window *parent);
+void ShowTownRainfallOptionsWindow(Window *parent);
 
 /* misc_gui.cpp */
 void ShowLandInfo(TileIndex tile);

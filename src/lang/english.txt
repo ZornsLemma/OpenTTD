@@ -1093,6 +1093,9 @@ STR_TOWN_PLACER_ORIGINAL                                        :Original
 STR_TOWN_PLACER_RAINFALL                                        :Rainfall
 STR_TOWN_PLACER_NONE                                            :No towns
 
+# Town Placer of Rainfall River Generator Expert Options
+STR_TP_RAINFALL_CAPTION                                         :{WHITE}Configuration of Town Placement using Rainfall River Generator
+
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced
 STR_DISASTER_NORMAL                                             :Normal

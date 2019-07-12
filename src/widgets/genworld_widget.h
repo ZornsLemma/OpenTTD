@@ -126,6 +126,10 @@ enum RainfallOptionWidgets {
 	WID_RFO_SHORE_MAX_SIZE_UP,                 ///< Increase max size of shore expansion
 };
 
+/** Widgets for the expert settings of town placement using the Rainfall River Generator */
+enum TownRainfallOptionWidgets {
+};
+
 /** Widgets of the #GenerateProgressWindow class. */
 enum GenerationProgressWidgets {
 	WID_GP_PROGRESS_BAR,  ///< Progress bar.

@@ -103,6 +103,7 @@ void SQGSWindow_Register(Squirrel *engine)
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WC_SCEN_LAND_GEN,                          "WC_SCEN_LAND_GEN");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WC_GENERATE_LANDSCAPE,                     "WC_GENERATE_LANDSCAPE");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WC_RAINFALL_OPTIONS,                       "WC_RAINFALL_OPTIONS");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WC_TOWN_RAINFALL_OPTIONS,                  "WC_TOWN_RAINFALL_OPTIONS");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WC_MODAL_PROGRESS,                         "WC_MODAL_PROGRESS");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WC_NETWORK_WINDOW,                         "WC_NETWORK_WINDOW");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WC_CLIENT_LIST,                            "WC_CLIENT_LIST");
