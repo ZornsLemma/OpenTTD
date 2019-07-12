@@ -114,6 +114,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_DEFINE_LAKES_LOG_LEVEL 9
 #define RAINFALL_CONSUME_LAKES_LOG_LEVEL 9
 #define RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL 9
+#define RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -314,6 +315,11 @@ inline byte GetWaterInfo(byte *water_info, TileIndex tile) { return water_info[t
  *  @param value bits 0..2 direction, 3..5 WaterType
  */
 inline void SetWaterInfo(byte *water_info, TileIndex tile, byte value) { water_info[tile] = value; }
+
+/** Returns wether the given tiles is not declared to become any water.
+ *  @return wether the given tiles is not declared to become any water.
+ */
+inline bool IsNoWater(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_NONE; }
 
 /** Declares the given tile an active lake center.
  *  @param water_info array
@@ -776,6 +782,25 @@ public:
 	inline void SetWaterInfo(TileIndex tile, byte value) { this->water_info[tile] = value; }
 };
 
+/** Helper class for sorting tiles appropriately for potential terraforming.
+ */
+struct TileWithHeightAndFlow {
+	TileIndex tile;
+	uint height;
+	int flow;
+
+	TileWithHeightAndFlow(TileIndex tile, uint height, int flow) { this->tile = tile; this->height = height; this->flow = flow; }
+
+	bool operator < (const TileWithHeightAndFlow& other) const
+    {
+		if (this->height == other.height) {
+			return this->flow > other.flow;
+		} else {
+			return this->height < other.height;
+		}
+    }
+};
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,
@@ -807,6 +832,22 @@ private:
 
 	static const uint LAKE_HASH_SIZE = 8; ///< The number of bits the hash for lake path finding should have.
 	static uint LakePathSearch_Hash(uint tile, uint dir);
+
+	bool IsPlannedAsWater(TileIndex tile, int *water_flow, byte *water_info);
+	bool IsPureDiagonalFlow(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info,
+						   Direction diagonal_direction, Direction straight_direction_one, Direction straight_direction_two);
+	int GetNumberOfAscendedSlopes(Slope slope);
+	void DeclareNeighborTileWater(TileIndex water_neighbor_tiles[DIR_COUNT], TileIndex neighbor_tiles[DIR_COUNT], bool add_tile, Direction direction);
+	void SetExtraNeighborTilesProcessed(TileIndex water_neighbor_tiles[DIR_COUNT], byte *water_info, std::vector<TileWithValue> &extra_river_tiles, bool add_tile, Direction direction, int flow);
+	void ChooseTileForExtraRiver(TileIndex tile,
+								TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT],
+								Direction diagonal_direction, Direction straight_direction_one, Direction straight_direction_two,
+								bool inflow_pure, bool *choose_tile_one, bool *choose_tile_two);
+	void PrepareRiverTile(TileIndex tile, int flow, int *water_flow, byte *water_info, std::vector<TileWithValue> &extra_river_tiles);
+	void DeterminePlannedWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
+	void PrepareRiversAndLakes(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithValue> &extra_river_tiles);
+	void AddExtraRiverTilesToWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::vector<TileWithValue> &extra_river_tiles);
+	void GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, byte *water_info);
 
 public:
 	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);

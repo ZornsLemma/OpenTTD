@@ -1779,12 +1779,291 @@ bool RainfallRiverGenerator::CalculateLakePath(std::set<TileIndex> &lake_tiles, 
 	return result == AYSTAR_FOUND_END_NODE;
 }
 
+/* =================================================== */
+/* ======= Helper functions about bookkeeping ======== */
+/* =================================================== */
+
+bool RainfallRiverGenerator::IsPlannedAsWater(TileIndex tile, int *water_flow, byte *water_info)
+{
+	/* All tiles with no outflow are declared lake centers.  This state has to persist throughout the
+	 * whole calculation, since various algorithms need the information "I cannot step any tile further here.".
+	 * Some lake centers never become actual lakes, because they don´t gain enough flow for at least a single
+	 * lake tile.  Thus, for lake centers we also have to test wether there is enough flow for getting
+	 * a visually visible lake.
+	 */
+	return tile != INVALID_TILE
+			  && (IsRiver(water_info, tile) || (IsLakeCenter(water_info, tile) && water_flow[tile] >= _settings_newgame.game_creation.rainfall.flow_for_river) || IsOrdinaryLakeTile(water_info, tile));
+}
+
+/** Returns wether the diagonal tile given by its direction has a flow towards this tile, and none of the adjacent straight neighbor tiles are planned as water.
+ *  This is the case, where we have to add a river tile, to complete the river.
+ *  (we only want to generate rivers where the tiles are connected through edges, not just corners, but earlier, we sometimes generated
+ *   diagonal flows in order to honor the existing landscape as best as possible)
+ */
+bool RainfallRiverGenerator::IsPureDiagonalFlow(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info,
+							   Direction diagonal_direction, Direction straight_direction_one, Direction straight_direction_two)
+{
+	TileIndex diagonal_tile = neighbor_tiles[diagonal_direction];
+	if (diagonal_tile != INVALID_TILE && AddFlowDirectionToTile(diagonal_tile, water_info[diagonal_tile] == tile)) {
+		TileIndex straight_tile_one = neighbor_tiles[straight_direction_one];
+		TileIndex straight_tile_two = neighbor_tiles[straight_direction_two];
+		return !this->IsPlannedAsWater(straight_tile_one, water_flow, water_info) && !this->IsPlannedAsWater(straight_tile_two, water_flow, water_info);
+	} else {
+		return false;
+	}
+}
+
+/** Returns how many corners of the given slope are raised, or 4 for steep slopes.
+ *  Used to get a measure, which tile is the steeper one.
+ */
+int RainfallRiverGenerator::GetNumberOfAscendedSlopes(Slope slope)
+{
+	if (slope == SLOPE_FLAT) {
+		return 0;
+	} else if (IsSlopeWithOneCornerRaised(slope)) {
+		return 1;
+	} else if (IsInclinedSlope(slope) || slope == SLOPE_NS || slope == SLOPE_EW) {
+		return 2;
+	} else if (IsSteepSlope(slope)) {
+		return 4;
+	} else {
+		return 3;
+	}
+}
+
+void RainfallRiverGenerator::DeclareNeighborTileWater(TileIndex water_neighbor_tiles[DIR_COUNT], TileIndex neighbor_tiles[DIR_COUNT], bool add_tile, Direction direction)
+{
+	if (add_tile) {
+		water_neighbor_tiles[direction] = neighbor_tiles[direction];
+	}
+}
+
+void RainfallRiverGenerator::SetExtraNeighborTilesProcessed(TileIndex water_neighbor_tiles[DIR_COUNT], byte *water_info, std::vector<TileWithValue> &extra_river_tiles,
+				bool add_tile, Direction direction, int flow)
+{
+	if (add_tile) {
+		TileIndex tile = water_neighbor_tiles[direction];
+		DeclareRiver(water_info, tile);
+		MarkProcessed(water_info, tile);
+		extra_river_tiles.push_back(TileWithValue(tile, flow));
+		DEBUG(map, RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL, "Declared extra tile (%i,%i) water because of diagonal flow.", TileX(tile), TileY(tile));
+	}
+}
+
+/* ========================================================= */
+/* ======= Prepare River, Choose Diagonal Extra Tiles ====== */
+/* ========================================================= */
+
+/** In the situation that a river flows diagonal, this function decides which of the straight neighbor tiles
+ *  beneith that diagonal direction is declared an extra river tile.
+ */
+void RainfallRiverGenerator::ChooseTileForExtraRiver(TileIndex tile,
+									TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT],
+									Direction diagonal_direction, Direction straight_direction_one, Direction straight_direction_two,
+									bool inflow_pure, bool *choose_tile_one, bool *choose_tile_two)
+{
+	/* For shortness of the calling function, we check here wether we actually have a diagonal pure inflow tile. */
+	if (inflow_pure && !*choose_tile_one && !*choose_tile_two) {
+		/* The diagonal tile exists since the inflow is pure, and the straight tiles exist since the diagonal tile exists. */
+		Slope neighbor_slope_one = neighbor_slopes[straight_direction_one];
+		Slope neighbor_slope_two = neighbor_slopes[straight_direction_two];
+		int neighbor_height_one = neighbor_heights[straight_direction_one];
+		int neighbor_height_two = neighbor_heights[straight_direction_two];
+
+		if (neighbor_height_one > neighbor_height_two) {
+			/* If the candiate tiles differ in their height as of GetTileZ, choose the upper one, as this allows as to lower landscape instead of make it higher. */
+			*choose_tile_one = true;
+		} else if (neighbor_height_two > neighbor_height_one) {
+			/* Ditto */
+			*choose_tile_two = true;
+		} else {
+			/* If both tiles have equal height, take the lower one, measured in raised corners. */
+			int ascended_one = this->GetNumberOfAscendedSlopes(neighbor_slope_one);
+			int ascended_two = this->GetNumberOfAscendedSlopes(neighbor_slope_two);
+		    if (ascended_one < ascended_two) {
+				*choose_tile_one = true;
+			} else {
+				*choose_tile_two = true;
+			}
+		}
+	}
+}
+
+/** This function adds additional straight neighbor river tiles for river tiles with diagonal flow.
+ */
+void RainfallRiverGenerator::PrepareRiverTile(TileIndex tile, int flow, int *water_flow, byte *water_info, std::vector<TileWithValue> &extra_river_tiles)
+{
+	DEBUG(map, RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL, "Generating river tile for (%i,%i) with flow %i", TileX(tile), TileY(tile), flow);
+
+	/* First find all neighbor tiles that have a not-yet-processed river.  We will try our very best in this
+	 * function to do terraforming in a way that is friendly towards placing a river on those tiles.
+	 */
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+	Slope neighbor_slopes[DIR_COUNT] = { SLOPE_FLAT, SLOPE_FLAT, SLOPE_FLAT, SLOPE_FLAT,
+								 SLOPE_FLAT, SLOPE_FLAT, SLOPE_FLAT, SLOPE_FLAT };
+	int neighbor_heights[DIR_COUNT] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+	bool invalidate_mask[DIR_COUNT] = { true, true, true, true, true, true, true, true };
+
+	StoreAllNeighborTiles(tile, neighbor_tiles);
+	StoreSlopes(neighbor_tiles, neighbor_slopes, neighbor_heights);
+
+	/* Set up a second array, just containing the relevant neighbor tiles, i.e. the ones where actually a river we have to take care of is located. */
+	TileIndex water_neighbor_tiles[DIR_COUNT] = { neighbor_tiles[0], neighbor_tiles[1], neighbor_tiles[2], neighbor_tiles[3],
+											 neighbor_tiles[4], neighbor_tiles[5], neighbor_tiles[6], neighbor_tiles[7] };
+	for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+		if (neighbor_tiles[n] != INVALID_TILE) {
+			invalidate_mask[n] = !IsWaterTile(water_info, neighbor_tiles[n]);
+		}
+	}
+	InvalidateTiles(water_neighbor_tiles, invalidate_mask);
+
+
+	/* Properties of our tile */
+	int height;
+	Slope slope = GetTileSlope(tile, &height);
+
+	DebugTileInfo(RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL, tile, slope, height, neighbor_tiles, neighbor_slopes, neighbor_heights);
+
+	/* Diagonal flow that needs adding river tiles as straight neighbor tiles. */
+	bool north_inflow_pure = this->IsPureDiagonalFlow(tile, water_neighbor_tiles, water_flow, water_info, DIR_N, DIR_NW, DIR_NE);
+	bool west_inflow_pure = this->IsPureDiagonalFlow(tile, water_neighbor_tiles, water_flow, water_info, DIR_W, DIR_NW, DIR_SW);
+	bool east_inflow_pure = this->IsPureDiagonalFlow(tile, water_neighbor_tiles, water_flow, water_info, DIR_E, DIR_NE, DIR_SE);
+	bool south_inflow_pure = this->IsPureDiagonalFlow(tile, water_neighbor_tiles, water_flow, water_info, DIR_S, DIR_SW, DIR_SE);
+
+	DEBUG(map, 9, "Tile (%i,%i): pure (%i,%i,%i,%i)", TileX(tile), TileY(tile), north_inflow_pure, west_inflow_pure, east_inflow_pure, south_inflow_pure);
+
+	/* If two adjacent diagonal tiles have both pure inflow, we don´t look at the slopes, but choose the tile in between. */
+	bool add_river_nw = north_inflow_pure && west_inflow_pure;
+	bool add_river_ne = north_inflow_pure && east_inflow_pure;
+	bool add_river_sw = south_inflow_pure && west_inflow_pure;
+	bool add_river_se = south_inflow_pure && east_inflow_pure;
+
+	DEBUG(map, 9, "Tile (%i,%i), simple: add (%i,%i,%i,%i)", TileX(tile), TileY(tile), add_river_nw, add_river_ne, add_river_sw, add_river_se);
+
+	/* If the simple strategy above didn´t help, take a decision based on the slopes. */
+	this->ChooseTileForExtraRiver(tile, neighbor_tiles, neighbor_slopes, neighbor_heights, DIR_N, DIR_NW, DIR_NE, north_inflow_pure, &add_river_nw, &add_river_ne);
+	this->ChooseTileForExtraRiver(tile, neighbor_tiles, neighbor_slopes, neighbor_heights, DIR_W, DIR_NW, DIR_SW, west_inflow_pure, &add_river_nw, &add_river_sw);
+	this->ChooseTileForExtraRiver(tile, neighbor_tiles, neighbor_slopes, neighbor_heights, DIR_E, DIR_NE, DIR_SE, east_inflow_pure, &add_river_ne, &add_river_se);
+	this->ChooseTileForExtraRiver(tile, neighbor_tiles, neighbor_slopes, neighbor_heights, DIR_S, DIR_SW, DIR_SE, south_inflow_pure, &add_river_sw, &add_river_se);
+
+	DEBUG(map, 9, "Tile (%i,%i), based on slopes: add (%i,%i,%i,%i)", TileX(tile), TileY(tile), add_river_nw, add_river_ne, add_river_sw, add_river_se);
+
+	/* Update the water_neighbor_tiles array, as those extra straight neighbor tiles weren´t known when we calculated it. */
+	this->DeclareNeighborTileWater(water_neighbor_tiles, neighbor_tiles, add_river_nw, DIR_NW);
+	this->DeclareNeighborTileWater(water_neighbor_tiles, neighbor_tiles, add_river_ne, DIR_NE);
+	this->DeclareNeighborTileWater(water_neighbor_tiles, neighbor_tiles, add_river_sw, DIR_SW);
+	this->DeclareNeighborTileWater(water_neighbor_tiles, neighbor_tiles, add_river_se, DIR_SE);
+
+	/* Mark extra water tiles being introduced because of straight neighbor tiles as being processed and being rivers. */
+	this->SetExtraNeighborTilesProcessed(water_neighbor_tiles, water_info, extra_river_tiles, add_river_nw, DIR_NW, flow);
+	this->SetExtraNeighborTilesProcessed(water_neighbor_tiles, water_info, extra_river_tiles, add_river_ne, DIR_NE, flow);
+	this->SetExtraNeighborTilesProcessed(water_neighbor_tiles, water_info, extra_river_tiles, add_river_sw, DIR_SW, flow);
+	this->SetExtraNeighborTilesProcessed(water_neighbor_tiles, water_info, extra_river_tiles, add_river_se, DIR_SE, flow);
+
+	MarkProcessed(water_info, tile);
+}
+
+/** This function determines, which tiles are planned to become river or lake, based on the settings (i.e. minimum flow
+ *  for river).  The tiles are added to the given vector of water_tiles.
+ */
+void RainfallRiverGenerator::DeterminePlannedWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator)
+{
+	/* In this step of the calculation, we leave the heightlevel iterator scheme we used above.
+	 * We now have calculated flow values, they grow downwards with the water flow, we know where
+	 * lakes are supposed to be, and which surface level they have.
+     * However, we still need to perform some terraforming on the small scale, since above, we
+	 * generated flow in particular for tiles that are not suitable for rivers and lakes.
+	 * Our strategy is lowering tiles where needed to make space for rivers, but ascending
+	 * landscape in lake basins in order to get a proper lake surface.
+	 * To make this work, we process and maybe terraform tiles bottom-up, and for equal
+	 * heightlevels, we first have a look at tiles with big flow.
+	 * The following loop records all relevant tiles in a vector, and after that, the vector
+	 * will be sorted accordingly.
+	 */
+	for (uint x = 0; x < MapSizeX(); x++) {
+		for (uint y = 0; y < MapSizeY(); y++) {
+			TileIndex tile = TileXY(x, y);
+			if (IsActiveLakeCenter(water_info, tile) && define_lakes_iterator->HasSurfaceHeightForLake(tile)) {
+				/* Record lake centers with the calculated surface heigth */
+				uint surface_height = (int)define_lakes_iterator->GetSurfaceHeightForLake(tile);
+				water_tiles.push_back(TileWithHeightAndFlow(tile, surface_height, water_flow[tile]));
+				DEBUG(map, RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL, "Recorded tile (%i,%i) as lake center, surface_height %i, flow %i", TileX(tile), TileY(tile), surface_height, water_flow[tile]);
+			} else if (water_flow[tile] >= _settings_newgame.game_creation.rainfall.flow_for_river && !IsOrdinaryLakeTile(water_info, tile) && !IsConsumedLakeCenter(water_info, tile)) {
+				/* All other tiles with enough flow, that are not in lakes are considered rivers. */
+				water_tiles.push_back(TileWithHeightAndFlow(tile, GetTileZ(tile), water_flow[tile]));
+				DeclareRiver(water_info, tile);
+				DEBUG(map, RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL, "Recorded tile (%i,%i) as river tile, height %i, flow %i", TileX(tile), TileY(tile), GetTileZ(tile), water_flow[tile]);
+			}
+		}
+	}
+
+	std::sort(water_tiles.begin(), water_tiles.end());
+}
+
+/** This function performs some preparation work on both rivers and lakes.  E.g., adding additional tiles to rivers, if they flow diagonal, or
+ *  determining, which tiles are necessary to keep a lake connected.
+ */
+void RainfallRiverGenerator::PrepareRiversAndLakes(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator,
+												   std::vector<TileWithValue> &extra_river_tiles)
+{
+	for (uint n = 0; n < water_tiles.size(); n++) {
+		TileWithHeightAndFlow tile_info = water_tiles[n];
+		TileIndex tile = tile_info.tile;
+		int flow = tile_info.flow;
+
+		if (IsActiveLakeCenter(water_info, tile)) {
+		} else {
+			this->PrepareRiverTile(tile, flow, water_flow, water_info, extra_river_tiles);
+		}
+	}
+}
+
+/** This function adds the tiles stored in extra_river_tiles with flow zero to the given vector of water_tiles.
+ */
+void RainfallRiverGenerator::AddExtraRiverTilesToWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::vector<TileWithValue> &extra_river_tiles)
+{
+	/* The above algorithm may produce extra river tiles to transform diagonal flow into flow over tile edges (and not corners).
+	 * Just add them at the end of the vector here, the sort order isn´t relevant here any longer.  Also, below we only need
+	 * tile, but no longer surface_height and flow.
+	 */
+	for (std::vector<TileWithValue>::const_iterator it = extra_river_tiles.begin(); it != extra_river_tiles.end(); it++) {
+		TileWithValue tile_with_value = *it;
+		water_tiles.push_back(TileWithHeightAndFlow(tile_with_value.tile, 0, tile_with_value.value));
+	}
+}
+
+/** This function makes all tiles planned to become river actually river in the OpenTTD sense.
+ *  Though usually, only tiles with valid slope will be passed to that function, it performs a check
+ *  wether slope is indeed valid, and prints a warning to the log if not.
+ */
+void RainfallRiverGenerator::GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, byte *water_info)
+{
+	/* Here, finally, we actually generate the water.
+	 * Note that this step is separated from the previous one, in order to have the chance to do a last check, wether slope is actually correct.
+	 * After all, the above algorithm has to perform some terraforming, and guaranteeing that not accidentally some river tile is terraformed
+	 * to the wrong slope as side effect of another terraforming operation is not quite trivial.
+	 * By calling MakeWater here, after a final check, we make things safe.
+	 */
+	for (TileIndex tile = 0; tile < MapSize(); tile++) {
+		if (WasProcessed(water_info, tile)) {
+			Slope slope = GetTileSlope(tile);
+			if (slope == SLOPE_FLAT || slope == SLOPE_NE || slope == SLOPE_SE || slope == SLOPE_NW || slope == SLOPE_SW) {
+				MakeRiver(tile, Random());
+			} else {
+				DEBUG(map, 0, "WARNING: Tile (%i,%i) was marked to become water, but has wrong slope %s .... Ignored.", TileX(tile), TileY(tile), SlopeToString(GetTileSlope(tile)));
+			}
+		}
+	}
+}
+
 /** The generator function.  The following steps are performed in this order when generating rivers:
  *  (1) Calculate a height index, for fast iteration over all tiles of a particular heightlevel.
  *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
  *  (3) Recalculate HeightIndex and NumberOfLowerTiles, as step (2) performed terraforming, and thus invalidated them.
  *  (4) Calculate flow.  Each tiles gains one unit of flow, while flowing downwards, it sums up.
  *  (6) Define lakes, i.e. decide which lake covers which tiles, and decide about the lake surface height.
+ *  (7) Prepare rivers and lakes.  Add additional corner tiles to rivers, if flow is diagonal.
+ * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
 {
@@ -1824,6 +2103,17 @@ void RainfallRiverGenerator::GenerateRivers()
 	for (int h = _settings_game.construction.max_heightlevel; h >= 0; h--) {
 		define_lakes_iterator->Calculate(h);
 	}
+
+	/* (7) Prepare rivers and lakes, e.g. add additional corner tiles if flow direction is diagonal. */
+	std::vector<TileWithHeightAndFlow> water_tiles = std::vector<TileWithHeightAndFlow>();
+	std::vector<TileWithValue> extra_river_tiles = std::vector<TileWithValue>();
+	this->DeterminePlannedWaterTiles(water_tiles, water_flow, water_info, define_lakes_iterator);
+	this->PrepareRiversAndLakes(water_tiles, water_flow, water_info, define_lakes_iterator, extra_river_tiles);
+	this->AddExtraRiverTilesToWaterTiles(water_tiles, extra_river_tiles);
+
+
+	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
+	this->GenerateRiverTiles(water_tiles, water_info);
 
 	/* Debug code: Store the results of the iterators in a public array, to be able to query them in the LandInfoWindow.
 	 *             Without that possibility, debugging those values would be really hard. */

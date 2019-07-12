@@ -142,6 +142,9 @@ void StoreAllNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
 void StoreSlopes(TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT]);
 void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[DIR_COUNT]);
 
+const char* SlopeToString(Slope slope);
+void DebugTileInfo(int level, TileIndex tile, Slope slope, int height, TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT]);
+
 /** This class provides functionality for determining a connected component on the map.
  *  Which tiles are recognized is subclass-specific (e.g. all tiles of a certain
  *  heightlevel), furthermore the kind of container where the tiles belonging to the

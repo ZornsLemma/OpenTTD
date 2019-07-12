@@ -308,3 +308,62 @@ void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[D
 		}
 	}
 }
+
+/*=================================== Debug helper functions ======================================*/
+/*=================================================================================================*/
+
+/** Returns the given slope as const char*.
+ *  (meant for debugging)
+ *  @param slope some slope
+ *  @return slope as const char*
+ */
+const char* SlopeToString(Slope slope)
+{
+	switch (slope) {
+		case SLOPE_FLAT:  return "SLOPE_FLAT";
+		case SLOPE_W:  return "SLOPE_W";
+		case SLOPE_S:  return "SLOPE_S";
+		case SLOPE_E:  return "SLOPE_E";
+		case SLOPE_N:  return "SLOPE_N";
+		case SLOPE_NW:  return "SLOPE_NW";
+		case SLOPE_SW:  return "SLOPE_SW";
+		case SLOPE_SE:  return "SLOPE_SE";
+		case SLOPE_NE:  return "SLOPE_NE";
+		case SLOPE_EW:  return "SLOPE_EW";
+		case SLOPE_NS:  return "SLOPE_NS";
+		case SLOPE_NWS:  return "SLOPE_NWS";
+		case SLOPE_WSE:  return "SLOPE_WSE";
+		case SLOPE_SEN:  return "SLOPE_SEN";
+		case SLOPE_ENW:  return "SLOPE_ENW";
+		case SLOPE_STEEP_W:  return "SLOPE_STEEP_W";
+		case SLOPE_STEEP_S:  return "SLOPE_STEEP_S";
+		case SLOPE_STEEP_E:  return "SLOPE_STEEP_E";
+		case SLOPE_STEEP_N:  return "SLOPE_STEEP_N";
+		default: return "Unknown";
+	}
+}
+
+/** Prints the neighborhood of a tile (slopes, heights) to DEBUG in a short one-line-style.
+ */
+void DebugTileInfo(int level, TileIndex tile, Slope slope, int height, TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT])
+{
+	DEBUG(map, level, "TILE (%i,%i)=(%s,%i): N=(%s,%i),NW=(%s,%i),NE=(%s,%i),W=(%s,%i),E=(%s,%i),SW=(%s,%i),SE=(%s,%i),S=(%s,%i)",
+				   TileX(tile), TileY(tile),
+				   SlopeToString(slope), height,
+				   neighbor_tiles[DIR_N] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_N]) : "NONE",
+				   neighbor_tiles[DIR_N] != INVALID_TILE ? neighbor_heights[DIR_N] : -1,
+				   neighbor_tiles[DIR_NW] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_NW]) : "NONE",
+				   neighbor_tiles[DIR_NW] != INVALID_TILE ? neighbor_heights[DIR_NW] : -1,
+				   neighbor_tiles[DIR_NE] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_NE]) : "NONE",
+				   neighbor_tiles[DIR_NE] != INVALID_TILE ? neighbor_heights[DIR_NE] : -1,
+				   neighbor_tiles[DIR_W] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_W]) : "NONE",
+				   neighbor_tiles[DIR_W] != INVALID_TILE ? neighbor_heights[DIR_W] : -1,
+				   neighbor_tiles[DIR_E] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_E]) : "NONE",
+				   neighbor_tiles[DIR_E] != INVALID_TILE ? neighbor_heights[DIR_E] : -1,
+				   neighbor_tiles[DIR_SW] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_SW]) : "NONE",
+				   neighbor_tiles[DIR_SW] != INVALID_TILE ? neighbor_heights[DIR_SW] : -1,
+				   neighbor_tiles[DIR_SE] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_SE]) : "NONE",
+				   neighbor_tiles[DIR_SE] != INVALID_TILE ? neighbor_heights[DIR_SE] : -1,
+				   neighbor_tiles[DIR_S] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_S]) : "NONE",
+				   neighbor_tiles[DIR_S] != INVALID_TILE ? neighbor_heights[DIR_S] : -1);
+}
