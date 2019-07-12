@@ -44,6 +44,8 @@ struct RainfallOptionWindow : Window {
 	{
 		this->parent = parent;
 		this->InitNested(window_number);
+
+		this->OnInvalidateData();
 	}
 
 	virtual void SetStringParameters(int widget) const
@@ -132,6 +134,21 @@ struct RainfallOptionWindow : Window {
 				this->SetWidgetDirty(*widget);
 			}
 		}
+	}
+
+	virtual void OnInvalidateData(int data = 0, bool gui_scope = true)
+	{
+		if (!gui_scope) return;
+		/* Don´t allow changing the wider rivers multiplicator, if wider rivers aren´t allowed at all */
+		this->SetWidgetDisabledState(WID_RFO_WIDER_RIVERS_MULT_DOWN, _settings_newgame.game_creation.rainfall.wider_rivers_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_RIVERS_MULT_UP, _settings_newgame.game_creation.rainfall.wider_rivers_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_RIVERS_MULT_TEXT, _settings_newgame.game_creation.rainfall.wider_rivers_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_VALLEYS_MULT_DOWN, _settings_newgame.game_creation.rainfall.wider_valleys_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_VALLEYS_MULT_UP, _settings_newgame.game_creation.rainfall.wider_valleys_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_VALLEYS_MULT_TEXT, _settings_newgame.game_creation.rainfall.wider_valleys_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_VALLEYS_RANDOM_DOWN, _settings_newgame.game_creation.rainfall.wider_valleys_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_VALLEYS_RANDOM_UP, _settings_newgame.game_creation.rainfall.wider_valleys_enabled != 1);
+		this->SetWidgetDisabledState(WID_RFO_WIDER_VALLEYS_RANDOM_TEXT, _settings_newgame.game_creation.rainfall.wider_valleys_enabled != 1);
 	}
 
 	/** Processes one click to a spinner widet.
