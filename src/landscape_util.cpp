@@ -507,3 +507,89 @@ void DebugTileInfo(int level, TileIndex tile, Slope slope, int height, TileIndex
 				   neighbor_tiles[DIR_S] != INVALID_TILE ? SlopeToString(neighbor_slopes[DIR_S]) : "NONE",
 				   neighbor_tiles[DIR_S] != INVALID_TILE ? neighbor_heights[DIR_S] : -1);
 }
+
+
+/** Performs a breadth first search, starting from the given tile
+ *  @param from_tile start tile
+ *  @return wether we find the destination.  May always return false, if the goal is just doing some
+ *          work on all found tiles, instead of finding some particular tile
+ */
+bool BreadthFirstSearch::PerformSearch(TileIndex from_tile)
+{
+	std::set<TileIndex> dirty_tiles = std::set<TileIndex>();
+	dirty_tiles.insert(from_tile);
+	return this->DoPerformSearch(dirty_tiles);
+}
+
+/** Performs a breadth first search, starting with the given set of tiles
+ *  @param from_tiles set of start tiles
+ *  @return wether we find the destination.  May always return false, if the goal is just doing some
+ *          work on all found tiles, instead of finding some particular tile
+ */
+bool BreadthFirstSearch::PerformSearch(std::set<TileIndex> &from_tiles)
+{
+	std::set<TileIndex> dirty_tiles = std::set<TileIndex>();
+	dirty_tiles.insert(from_tiles.begin(), from_tiles.end());
+	return this->DoPerformSearch(dirty_tiles);
+}
+
+/** Performs a breadth first search, starting with the given vector of tiles
+ *  @param from_tiles vector of start tiles
+ *  @return wether we find the destination.  May always return false, if the goal is just doing some
+ *          work on all found tiles, instead of finding some particular tile
+ */
+bool BreadthFirstSearch::PerformSearch(std::vector<TileIndex> &from_tiles)
+{
+	std::set<TileIndex> dirty_tiles = std::set<TileIndex>();
+	dirty_tiles.insert(from_tiles.begin(), from_tiles.end());
+	return this->DoPerformSearch(dirty_tiles);
+}
+
+/** Actually perform the breadth first search, starting with the given set of dirty tiles.
+ *  @param dirty_tiles tiles to start with
+ *  @return wether we find the destination.  May always return false, if the goal is just doing some
+ *          work on all found tiles, instead of finding some particular tile
+ */
+bool BreadthFirstSearch::DoPerformSearch(std::set<TileIndex> &dirty_tiles)
+{
+	this->iteration = 0;
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	while(dirty_tiles.size() > 0) {
+		std::vector<TileIndex> next_dirty_tiles = std::vector<TileIndex>();
+
+		for (std::set<TileIndex>::const_iterator it2 = dirty_tiles.begin(); it2 != dirty_tiles.end(); it2++) {
+			TileIndex curr_tile = *it2;
+
+			bool found = this->ProcessTile(curr_tile);
+			if (found) {
+				/* Success, found what we searched for */
+				return true;
+			}
+
+			for (int n = 0; n < DIR_COUNT; n++) {
+				neighbor_tiles[n] = INVALID_TILE;
+			}
+
+			/* Scan neighbor tiles. */
+			this->StoreNeighborTiles(curr_tile, neighbor_tiles);
+			for (int n = 0; n < DIR_COUNT; n++) {
+				TileIndex neighbor_tile = neighbor_tiles[n];
+
+				/* If the neighbor tile is ok for our search, record it for the next iteration */
+				if (neighbor_tile != INVALID_TILE
+					  && TakeNeighborTileIntoAccount(neighbor_tile)
+					  && dirty_tiles.find(neighbor_tile) == dirty_tiles.end()) {
+					next_dirty_tiles.push_back(neighbor_tile);
+				}
+			}
+		}
+
+		dirty_tiles.clear();
+		dirty_tiles.insert(next_dirty_tiles.begin(), next_dirty_tiles.end());
+
+		this->iteration++;
+	}
+
+	return false;
+}

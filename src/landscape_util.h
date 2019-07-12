@@ -266,4 +266,45 @@ public:
 	}
 };
 
+/** A breadth first search implementation on tiles.
+ *  Construct it, feed it with any context information you need (e.g. water flow when generating rivers), use PerformSearch for performing the actual search.
+ *  Its return value indicates wether the search was successful.  If more information needs to be gathered, use instance variables in your subclass.
+ */
+struct BreadthFirstSearch {
+
+protected:
+	/** The iteration of breadth first search. */
+	int iteration;
+
+	/** Do work for the currently processed tile.  Is called for the starting tile of the search always,
+	 *  and for all other tiles only if the combination of StoreNeighborTiles and TakeNeighborTileIntoAccount
+	 *  adds them to the dirty tiles.
+	 *  @param tile currently processed tile
+	 *  @return wether we found the destination of the search.  May return always false, if the goal is searching
+	 *          and processing the whole search space.
+	 */
+	virtual bool ProcessTile(TileIndex tile) = 0;
+
+	/** Choose neighbor tiles to be considered for the next search iteration, based on the given tile.
+	 *  Values in the passed array that are not set to INVALID_TILE will be taken into account.
+	 */
+	virtual void StoreNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]) = 0;
+
+	/** Returns wether the given neighbor tile should be taken into account for the next search iteration.
+     *  IMPORTANT NOTE: This function MAY ONLY return true for tiles that were not yet processed using
+	 *  ProcessTile, i.e. the task of keeping track of already seen tiles is a subclass-specific one.
+	 *  The superclass implementation only manages the dirty tiles set for the next iteration.
+	 */
+	virtual bool TakeNeighborTileIntoAccount(TileIndex tile) = 0;
+
+	bool DoPerformSearch(std::set<TileIndex> &dirty_tiles);
+
+public:
+	virtual ~BreadthFirstSearch() {}
+	bool PerformSearch(TileIndex from_tile);
+	bool PerformSearch(std::set<TileIndex> &from_tiles);
+	bool PerformSearch(std::vector<TileIndex> &from_tiles);
+	inline int GetIteration() { return this->iteration; }
+};
+
 #endif /* LANDSCAPE_UTIL_H */
