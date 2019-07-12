@@ -576,7 +576,7 @@ static void IniSaveSettings(IniFile *ini, const SettingDesc *sd, const char *grp
 {
 	IniGroup *group_def = NULL, *group;
 	IniItem *item;
-	char buf[512];
+	char buf[8192];
 	const char *s;
 	void *ptr;
 
