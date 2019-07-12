@@ -2785,7 +2785,10 @@ STR_MAPGEN_WORLD_GENERATION_CAPTION                             :{WHITE}World Ge
 STR_MAPGEN_MAPSIZE                                              :{BLACK}Map size:
 STR_MAPGEN_MAPSIZE_TOOLTIP                                      :{BLACK}Select the size of the map in tiles. The number of available tiles will be slightly smaller
 STR_MAPGEN_BY                                                   :{BLACK}*
+STR_MAPGEN_TOWN_PLACER                                          :{BLACK}Town Placer:
 STR_MAPGEN_NUMBER_OF_TOWNS                                      :{BLACK}No. of towns:
+STR_MAPGEN_TOWN_EXPERT_SETTINGS_BUTTON_CAPTION                  :{BLACK}Details
+STR_MAPGEN_TOWN_EXPERT_SETTINGS_BUTTON_TOOLTIP                  :{BLACK}Click here to configure what the town placer does in detail. Only possible when the Rainfall River Generator does the job.
 STR_MAPGEN_DATE                                                 :{BLACK}Date:
 STR_MAPGEN_NUMBER_OF_INDUSTRIES                                 :{BLACK}No. of industries:
 STR_MAPGEN_MAX_HEIGHTLEVEL                                      :{BLACK}Maximum map height:

@@ -22,7 +22,9 @@ enum GenerateLandscapeWidgets {
 	WID_GL_MAPSIZE_X_PULLDOWN,          ///< Dropdown 'map X size'.
 	WID_GL_MAPSIZE_Y_PULLDOWN,          ///< Dropdown 'map Y size'.
 
-	WID_GL_TOWN_PULLDOWN,               ///< Dropdown 'No. of towns'.
+	WID_GL_TOWN_PLACER_PULLDOWN,        ///< Dropdown 'Town placer'
+	WID_GL_TOWN_AMOUNT_PULLDOWN,        ///< Dropdown 'No. of towns'.
+	WID_GL_TOWN_PLACER_EXPERT_SETTINGS, ///< Button for opening the expert settings for town placement
 	WID_GL_INDUSTRY_PULLDOWN,           ///< Dropdown 'No. of industries'.
 
 	WID_GL_GENERATE_BUTTON,             ///< 'Generate' button.

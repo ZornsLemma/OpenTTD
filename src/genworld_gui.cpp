@@ -84,6 +84,7 @@ static const NWidgetPart _nested_generate_landscape_widgets[] = {
 				NWidget(NWID_VERTICAL, NC_EQUALSIZE), SetPIP(0, 4, 0),
 					NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_MAPSIZE, STR_MAPGEN_MAPSIZE_TOOLTIP), SetFill(1, 1),
 					NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_LAND_GENERATOR, STR_NULL), SetFill(1, 1),
+					NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_TOWN_PLACER, STR_NULL), SetFill(1, 1),
 					NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_NUMBER_OF_TOWNS, STR_NULL), SetFill(1, 1),
 					NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_TERRAIN_TYPE, STR_NULL), SetFill(1, 1),
 					NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_VARIETY, STR_NULL), SetFill(1, 1),
@@ -101,7 +102,13 @@ static const NWidgetPart _nested_generate_landscape_widgets[] = {
 						NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_MAPSIZE_Y_PULLDOWN), SetDataTip(STR_JUST_INT, STR_MAPGEN_MAPSIZE_TOOLTIP), SetFill(1, 0),
 					EndContainer(),
 					NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_LANDSCAPE_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
-					NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_TOWN_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
+					NWidget(NWID_HORIZONTAL),
+						NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_TOWN_PLACER_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
+						NWidget(NWID_SPACER), SetMinimalSize(2, 0), SetFill(1, 0),
+						NWidget(WWT_PUSHTXTBTN, COLOUR_ORANGE, WID_GL_TOWN_PLACER_EXPERT_SETTINGS), SetMinimalSize(30, 12),
+							  SetDataTip(STR_MAPGEN_TOWN_EXPERT_SETTINGS_BUTTON_CAPTION, STR_MAPGEN_TOWN_EXPERT_SETTINGS_BUTTON_TOOLTIP),
+					EndContainer(),
+					NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_TOWN_AMOUNT_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
 					NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_TERRAIN_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
 					NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_VARIETY_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
 					NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_WATER_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
@@ -120,6 +127,7 @@ static const NWidgetPart _nested_generate_landscape_widgets[] = {
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_SMOOTHNESS, STR_NULL), SetFill(1, 1),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_RIVER_GENERATOR, STR_NULL), SetFill(1, 1),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_QUANTITY_OF_RIVERS, STR_NULL), SetFill(1, 1),
+
 					EndContainer(),
 					NWidget(NWID_VERTICAL, NC_EQUALSIZE), SetPIP(0, 4, 0),
 						/* Max. heightlevel. */
@@ -151,6 +159,7 @@ static const NWidgetPart _nested_generate_landscape_widgets[] = {
 						EndContainer(),
 					EndContainer(),
 				EndContainer(),
+				NWidget(NWID_SPACER), SetFill(1, 1),
 				NWidget(WWT_PUSHTXTBTN, COLOUR_GREEN, WID_GL_GENERATE_BUTTON), SetMinimalSize(84, 30), SetDataTip(STR_MAPGEN_GENERATE, STR_NULL), SetFill(1, 0),
 			EndContainer(),
 		EndContainer(),
@@ -218,11 +227,11 @@ static const NWidgetPart _nested_heightmap_load_widgets[] = {
 					NWidget(NWID_VERTICAL, NC_EQUALSIZE), SetPIP(0, 4, 0),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_MAPSIZE, STR_NULL), SetFill(1, 1),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_HEIGHTMAP_ROTATION, STR_NULL), SetFill(1, 1),
+						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_TOWN_PLACER, STR_NULL), SetFill(1, 1),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_NUMBER_OF_TOWNS, STR_NULL), SetFill(1, 1),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_NUMBER_OF_INDUSTRIES, STR_NULL), SetFill(1, 1),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_RIVER_GENERATOR, STR_NULL), SetFill(1, 1),
 						NWidget(WWT_TEXT, COLOUR_ORANGE), SetDataTip(STR_MAPGEN_QUANTITY_OF_RIVERS, STR_NULL), SetFill(1, 1),
-						NWidget(NWID_SPACER), SetFill(1, 1),
 					EndContainer(),
 					NWidget(NWID_VERTICAL, NC_EQUALSIZE), SetPIP(0, 4, 0),
 						/* Mapsize X * Y. */
@@ -232,7 +241,13 @@ static const NWidgetPart _nested_heightmap_load_widgets[] = {
 							NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_MAPSIZE_Y_PULLDOWN), SetDataTip(STR_JUST_INT, STR_NULL), SetFill(1, 0),
 						EndContainer(),
 						NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_HEIGHTMAP_ROTATION_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
-						NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_TOWN_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
+						NWidget(NWID_HORIZONTAL),
+							NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_TOWN_PLACER_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
+							NWidget(NWID_SPACER), SetMinimalSize(2, 0), SetFill(1, 0),
+							NWidget(WWT_PUSHTXTBTN, COLOUR_ORANGE, WID_GL_TOWN_PLACER_EXPERT_SETTINGS), SetMinimalSize(30, 12),
+								  SetDataTip(STR_MAPGEN_TOWN_EXPERT_SETTINGS_BUTTON_CAPTION, STR_MAPGEN_TOWN_EXPERT_SETTINGS_BUTTON_TOOLTIP),
+						EndContainer(),
+						NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_TOWN_AMOUNT_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
 						NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_INDUSTRY_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
 						NWidget(WWT_DROPDOWN, COLOUR_ORANGE, WID_GL_RIVER_GENERATOR_PULLDOWN), SetDataTip(STR_JUST_STRING, STR_NULL), SetFill(1, 0),
 						NWidget(NWID_HORIZONTAL),
@@ -241,7 +256,6 @@ static const NWidgetPart _nested_heightmap_load_widgets[] = {
 							NWidget(WWT_PUSHTXTBTN, COLOUR_ORANGE, WID_GL_RIVER_EXPERT_SETTINGS_BUTTON), SetMinimalSize(30, 12),
 								  SetDataTip(STR_MAPGEN_RIVER_EXPERT_SETTINGS_BUTTON_CAPTION, STR_MAPGEN_RIVER_EXPERT_SETTINGS_BUTTON_TOOLTIP),
 						EndContainer(),
-						NWidget(NWID_SPACER), SetFill(1, 1),
 					EndContainer(),
 					NWidget(NWID_VERTICAL), SetPIP(0, 4, 0),
 						NWidget(NWID_HORIZONTAL), SetPIP(0, 3, 0),
@@ -325,6 +339,7 @@ static const StringID _smoothness[]  = {STR_CONFIG_SETTING_ROUGHNESS_OF_TERRAIN_
 static const StringID _tree_placer[] = {STR_CONFIG_SETTING_TREE_PLACER_NONE, STR_CONFIG_SETTING_TREE_PLACER_ORIGINAL, STR_CONFIG_SETTING_TREE_PLACER_IMPROVED, INVALID_STRING_ID};
 static const StringID _rotation[]    = {STR_CONFIG_SETTING_HEIGHTMAP_ROTATION_COUNTER_CLOCKWISE, STR_CONFIG_SETTING_HEIGHTMAP_ROTATION_CLOCKWISE, INVALID_STRING_ID};
 static const StringID _landscape[]   = {STR_CONFIG_SETTING_LAND_GENERATOR_ORIGINAL, STR_CONFIG_SETTING_LAND_GENERATOR_TERRA_GENESIS, INVALID_STRING_ID};
+static const StringID _town_placer[] = {STR_TOWN_PLACER_ORIGINAL, STR_TOWN_PLACER_RAINFALL, INVALID_STRING_ID};
 static const StringID _num_towns[]   = {STR_NUM_VERY_LOW, STR_NUM_LOW, STR_NUM_NORMAL, STR_NUM_HIGH, STR_NUM_CUSTOM, INVALID_STRING_ID};
 static const StringID _num_inds[]    = {STR_FUNDING_ONLY, STR_MINIMAL, STR_NUM_VERY_LOW, STR_NUM_LOW, STR_NUM_NORMAL, STR_NUM_HIGH, INVALID_STRING_ID};
 static const StringID _variety[]     = {STR_VARIETY_NONE, STR_VARIETY_VERY_LOW, STR_VARIETY_LOW, STR_VARIETY_MEDIUM, STR_VARIETY_HIGH, STR_VARIETY_VERY_HIGH, INVALID_STRING_ID};
@@ -347,7 +362,7 @@ struct GenerateLandscapeWindow : public Window {
 		this->mode = (GenerateLandscapeWindowMode)this->window_number;
 
 		/* Disable town, industry and trees in SE */
-		this->SetWidgetDisabledState(WID_GL_TOWN_PULLDOWN,     _game_mode == GM_EDITOR);
+		this->SetWidgetDisabledState(WID_GL_TOWN_AMOUNT_PULLDOWN, _game_mode == GM_EDITOR);
 		this->SetWidgetDisabledState(WID_GL_INDUSTRY_PULLDOWN, _game_mode == GM_EDITOR);
 		this->SetWidgetDisabledState(WID_GL_TREE_PULLDOWN,     _game_mode == GM_EDITOR);
 
@@ -364,7 +379,8 @@ struct GenerateLandscapeWindow : public Window {
 			case WID_GL_MAX_HEIGHTLEVEL_TEXT: SetDParam(0, _settings_newgame.construction.max_heightlevel); break;
 			case WID_GL_SNOW_LEVEL_TEXT:      SetDParam(0, _settings_newgame.game_creation.snow_line_height); break;
 
-			case WID_GL_TOWN_PULLDOWN:
+			case WID_GL_TOWN_PLACER_PULLDOWN: SetDParam(0, _town_placer[_settings_newgame.game_creation.town_placer]); break;
+			case WID_GL_TOWN_AMOUNT_PULLDOWN:
 				if (_game_mode == GM_EDITOR) {
 					SetDParam(0, STR_CONFIG_SETTING_OFF);
 				} else if (_settings_newgame.difficulty.number_towns == CUSTOM_TOWN_NUMBER_DIFFICULTY) {
@@ -456,6 +472,9 @@ struct GenerateLandscapeWindow : public Window {
 		this->SetWidgetDisabledState(WID_GL_SNOW_LEVEL_DOWN, _settings_newgame.game_creation.snow_line_height <= MIN_SNOWLINE_HEIGHT || _settings_newgame.game_creation.landscape != LT_ARCTIC);
 		this->SetWidgetDisabledState(WID_GL_SNOW_LEVEL_UP,   _settings_newgame.game_creation.snow_line_height >= MAX_SNOWLINE_HEIGHT || _settings_newgame.game_creation.landscape != LT_ARCTIC);
 
+		/* The original town placer doesn´t offer expert options */
+		this->SetWidgetDisabledState(WID_GL_TOWN_PLACER_EXPERT_SETTINGS, _settings_newgame.game_creation.town_placer == TWP_ORIGINAL);
+
 		/* The original river generator doesn´t offer expert options */
 		this->SetWidgetDisabledState(WID_GL_RIVER_EXPERT_SETTINGS_BUTTON, _settings_newgame.game_creation.river_generator == RG_ORIGINAL);
 
@@ -498,7 +517,8 @@ struct GenerateLandscapeWindow : public Window {
 				*size = maxdim(*size, GetStringBoundingBox(STR_MAPGEN_HEIGHTMAP_SIZE));
 				break;
 
-			case WID_GL_TOWN_PULLDOWN:
+			case WID_GL_TOWN_PLACER_PULLDOWN: strs = _town_placer; break;
+			case WID_GL_TOWN_AMOUNT_PULLDOWN:
 				strs = _num_towns;
 				SetDParamMaxValue(0, CUSTOM_TOWN_MAX_NUMBER);
 				*size = maxdim(*size, GetStringBoundingBox(STR_NUM_CUSTOM_NUMBER));
@@ -574,8 +594,12 @@ struct GenerateLandscapeWindow : public Window {
 				ShowDropDownList(this, BuildMapsizeDropDown(), _settings_newgame.game_creation.map_y, WID_GL_MAPSIZE_Y_PULLDOWN);
 				break;
 
-			case WID_GL_TOWN_PULLDOWN: // Number of towns
-				ShowDropDownMenu(this, _num_towns, _settings_newgame.difficulty.number_towns, WID_GL_TOWN_PULLDOWN, 0, 0);
+			case WID_GL_TOWN_PLACER_PULLDOWN: // Town placer
+				ShowDropDownMenu(this, _town_placer, _settings_newgame.game_creation.town_placer, WID_GL_TOWN_PLACER_PULLDOWN, 0, 0);
+				break;
+
+			case WID_GL_TOWN_AMOUNT_PULLDOWN: // Number of towns
+				ShowDropDownMenu(this, _num_towns, _settings_newgame.difficulty.number_towns, WID_GL_TOWN_AMOUNT_PULLDOWN, 0, 0);
 				break;
 
 			case WID_GL_INDUSTRY_PULLDOWN: // Number of industries
@@ -789,6 +813,9 @@ struct GenerateLandscapeWindow : public Window {
 							ShowRainfallOptionsWindow(this);
 							break;
 					}
+				} else if (_settings_newgame.game_creation.river_generator == RG_ORIGINAL) {
+					/* If the river generator switches to the original one, the town placer needs to do so accordingly. */
+					_settings_newgame.game_creation.town_placer = TWP_ORIGINAL;
 				}
 				break;
 			case WID_GL_SMOOTHNESS_PULLDOWN:    _settings_newgame.game_creation.tgen_smoothness = index;  break;
@@ -803,7 +830,14 @@ struct GenerateLandscapeWindow : public Window {
 
 			case WID_GL_HEIGHTMAP_ROTATION_PULLDOWN: _settings_newgame.game_creation.heightmap_rotation = index; break;
 
-			case WID_GL_TOWN_PULLDOWN:
+			case WID_GL_TOWN_PLACER_PULLDOWN:
+				_settings_newgame.game_creation.town_placer = index;
+				/* If the original river generator is selected, don´t allow selecting the rainfall town placer, it would be senseless. */
+				if (_settings_newgame.game_creation.town_placer == TWP_RAINFALL && _settings_newgame.game_creation.river_generator == RG_ORIGINAL) {
+					_settings_newgame.game_creation.town_placer = TWP_ORIGINAL;
+				}
+				break;
+			case WID_GL_TOWN_AMOUNT_PULLDOWN:
 				if ((uint)index == CUSTOM_TOWN_NUMBER_DIFFICULTY) {
 					this->widget_id = widget;
 					SetDParam(0, _settings_newgame.game_creation.custom_town_number);
@@ -842,7 +876,7 @@ struct GenerateLandscapeWindow : public Window {
 				case WID_GL_MAX_HEIGHTLEVEL_TEXT: value = DEF_MAX_HEIGHTLEVEL; break;
 				case WID_GL_START_DATE_TEXT: value = DEF_START_YEAR; break;
 				case WID_GL_SNOW_LEVEL_TEXT: value = DEF_SNOWLINE_HEIGHT; break;
-				case WID_GL_TOWN_PULLDOWN:   value = 1; break;
+				case WID_GL_TOWN_AMOUNT_PULLDOWN:   value = 1; break;
 				case WID_GL_WATER_PULLDOWN:  value = CUSTOM_SEA_LEVEL_MIN_PERCENTAGE; break;
 				default: NOT_REACHED();
 			}
@@ -864,7 +898,7 @@ struct GenerateLandscapeWindow : public Window {
 				_settings_newgame.game_creation.snow_line_height = Clamp(value, MIN_SNOWLINE_HEIGHT, MAX_SNOWLINE_HEIGHT);
 				break;
 
-			case WID_GL_TOWN_PULLDOWN:
+			case WID_GL_TOWN_AMOUNT_PULLDOWN:
 				_settings_newgame.game_creation.custom_town_number = Clamp(value, 1, CUSTOM_TOWN_MAX_NUMBER);
 				break;
 
