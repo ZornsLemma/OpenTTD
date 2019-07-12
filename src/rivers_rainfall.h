@@ -1000,6 +1000,17 @@ struct ExpandShoreLakeModificator : public LakeModificator {
 							std::set<TileIndex> &discarded_lake_tiles);
 };
 
+/** Index in the grid of wide valley multipliers. */
+typedef int ValleyGridIndex;
+
+/** Grid size in that grid */
+static const int VALLEY_GRID_SIZE = 16;
+
+inline ValleyGridIndex ValleyGridXY(int x, int y) { return y * (MapSizeX() / VALLEY_GRID_SIZE) + x; }
+inline int ValleyGridX(ValleyGridIndex c) { return c % (MapSizeX() / VALLEY_GRID_SIZE); }
+inline int ValleyGridY(ValleyGridIndex c) { return c / (MapSizeX() / VALLEY_GRID_SIZE); }
+inline int GetNumberOfValleyGrids() { return (MapSizeX() * MapSizeY()) / (VALLEY_GRID_SIZE * VALLEY_GRID_SIZE); }
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,
@@ -1072,10 +1083,12 @@ private:
 
 	void MakeRiverTileWiderStraight(bool river, bool valley,
 									TileIndex tile, int base_flow, int dx, int dy, int desired_width, int desired_height, Slope desired_slope, int number_of_alternatives, int *water_flow, byte *water_info,
-									DefineLakesIterator *define_lakes_iterator, std::map<TileIndex, HeightAndFlow> &additional_water_tiles);
+									DefineLakesIterator *define_lakes_iterator, int *valley_grid, std::map<TileIndex, HeightAndFlow> &additional_water_tiles);
 	void MakeRiversWiderByDirection(bool river, bool valley, TileIndex tile, Direction direction, int reached_bound, int height, Slope slope, int *water_flow, byte *water_info,
-								    DefineLakesIterator *define_lakes_iterator, std::map<TileIndex, HeightAndFlow> &additional_water_tiles);
-	void DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles);
+								    DefineLakesIterator *define_lakes_iterator, int *valley_grid, std::map<TileIndex, HeightAndFlow> &additional_water_tiles);
+	void DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int *valley_grid, std::vector<TileWithHeightAndFlow> &water_tiles);
+	void ModifyValleyGrid(int *valley_grid, int number_of_steps, int radius, int max_offset, bool init);
+	void InitializeValleyGrid(int *valley_grid);
 	void GenerateWiderRivers(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles);
 
 public:

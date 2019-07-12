@@ -2319,7 +2319,8 @@ int RainfallRiverGenerator::GetWideRiverBoundForFlow(int flow)
  */
 void RainfallRiverGenerator::MakeRiverTileWiderStraight(bool river, bool valley,
 														TileIndex tile, int base_flow, int dx, int dy, int desired_width, int desired_height, Slope desired_slope, int number_of_alternatives,
-														int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::map<TileIndex, HeightAndFlow> &additional_water_tiles)
+														int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int *valley_grid,
+														std::map<TileIndex, HeightAndFlow> &additional_water_tiles)
 {
 	assert(dx == 0 || dy == 0);
 
@@ -2331,8 +2332,14 @@ void RainfallRiverGenerator::MakeRiverTileWiderStraight(bool river, bool valley,
 	int tile_height = GetTileZ(tile);
 
 	/* The number of extra valley tiles at each side of the river */
-	int number_of_extra_valley_tiles = _settings_newgame.game_creation.rainfall.wider_valleys_multiplier > 0
-											  ? RandomRange(_settings_newgame.game_creation.rainfall.wider_valleys_multiplier * desired_width) : 0;
+	int number_of_extra_valley_tiles;
+	if (_settings_newgame.game_creation.rainfall.wider_valleys_multiplier > 0) {
+		int valley_modifier = valley_grid[ValleyGridXY(x / VALLEY_GRID_SIZE, y / VALLEY_GRID_SIZE)];
+		int wider_valleys_multiplier = (valley_modifier * _settings_newgame.game_creation.rainfall.wider_valleys_multiplier * desired_width) / 1000;
+		number_of_extra_valley_tiles = RandomRange(wider_valleys_multiplier);
+	} else {
+		number_of_extra_valley_tiles = 0;
+	}
 
 	/* Currently, we generate extra valley tiles with height <river height> plus this offset */
 	int curr_height_offset = 0;
@@ -2442,7 +2449,7 @@ void RainfallRiverGenerator::MakeRiverTileWiderStraight(bool river, bool valley,
  *  Depending on the direction, it trys some neighbor tiles.
  */
 void RainfallRiverGenerator::MakeRiversWiderByDirection(bool river, bool valley, TileIndex tile, Direction direction,
-														int reached_bound, int height, Slope slope, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, 
+														int reached_bound, int height, Slope slope, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int *valley_grid,
 														std::map<TileIndex, HeightAndFlow> &additional_water_tiles)
 {
 	uint x = TileX(tile);
@@ -2455,42 +2462,50 @@ void RainfallRiverGenerator::MakeRiversWiderByDirection(bool river, bool valley,
 	switch (direction) {
 		case DIR_S:
 			if (x < MapMaxX() - 1) {
-				this->MakeRiverTileWiderStraight(river, valley, TileXY(x + 1, y), base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x + 1, y), base_flow, 0, -1, reached_bound, height, slope, 1,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			}
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			break;
-		case DIR_SE: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+		case DIR_SE: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 0,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles); break;
 
 		case DIR_E:
 			if (y < MapMaxX() - 1) {
-				this->MakeRiverTileWiderStraight(river, valley, TileXY(x, y + 1), base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x, y + 1), base_flow, 1, 0, reached_bound, height, slope, 1,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			}
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			break;
 
-		case DIR_NE: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow,0, 1, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+		case DIR_NE: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow,0, 1, reached_bound, height, slope, 0,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles); break;
 
 		case DIR_N:
 			if (x > 1) {
-				this->MakeRiverTileWiderStraight(river, valley, TileXY(x - 1, y), base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x - 1, y), base_flow, 0, 1, reached_bound, height, slope, 1,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			}
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			break;
 
-		case DIR_NW: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+		case DIR_NW: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 0,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles); break;
 
 		case DIR_W:
 			if (y > 1) {
-				this->MakeRiverTileWiderStraight(river, valley, TileXY(x, y - 1), base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x, y - 1), base_flow, -1, 0, reached_bound, height, slope, 1,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			}
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
-			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			break;
 
-		case DIR_SW : this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+		case DIR_SW : this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 0,
+								  water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles); break;
 		default: NOT_REACHED();
 	}
 }
@@ -2510,7 +2525,7 @@ void RainfallRiverGenerator::MakeRiversWiderByDirection(bool river, bool valley,
  *  @param water_info the status information (where are rivers, flow direction, etc.) as calculated before
  *  @param water_tiles the tiles declared water so far, this function will only inspect such tiles
  */
-void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles)
+void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int *valley_grid, std::vector<TileWithHeightAndFlow> &water_tiles)
 {
 	std::map<TileIndex, HeightAndFlow> additional_water_tiles = std::map<TileIndex, HeightAndFlow>();
 	for (int n = 0; n < (int)water_tiles.size(); n++) {
@@ -2544,7 +2559,7 @@ void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int 
 						Direction direction = GetDirection(tile, neighbor_tiles[n]);
 						DEBUG(map, 9, "Making lake guaranteed path from (%i,%i) to (%i,%i) with direction %s wider; it will receive width %i for flow %i",
 										  TileX(tile), TileY(tile), TileX(neighbor_tiles[n]), TileY(neighbor_tiles[n]), DirectionToString(direction), reached_bound, water_flow[tile]);
-						this->MakeRiversWiderByDirection(river, valley, tile, direction, reached_bound, height, slope, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+						this->MakeRiversWiderByDirection(river, valley, tile, direction, reached_bound, height, slope, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 					}
 				}
 			} else {
@@ -2558,7 +2573,7 @@ void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int 
 				 * for width 2), as the player cannot see anyway which river tile was the original one.
 				 */
 				Direction direction = GetFlowDirection(water_info, tile);
-				this->MakeRiversWiderByDirection(river, valley, tile, direction, reached_bound, height, slope, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+				this->MakeRiversWiderByDirection(river, valley, tile, direction, reached_bound, height, slope, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			}
 		}
 	}
@@ -2575,17 +2590,107 @@ void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int 
 	}
 }
 
+/** Modifies the valley grid.  Performs the given number of steps.  In each step, a rectangular section
+ *  of the given radius will be altered.  Each value in that region will be altered by the same offset, that
+ *  is chosen in a random manner out of the range [-max_offset / 2, max_offset / 2].
+ *  If init is true, only values that are -1 will be altered.
+ *  Values will never be allowed to leave the range 0..1000.
+ */
+void RainfallRiverGenerator::ModifyValleyGrid(int *valley_grid, int number_of_steps, int radius, int max_offset, bool init)
+{
+	for (int n = 0; n < number_of_steps; n++) {
+		ValleyGridIndex center = RandomRange(GetNumberOfValleyGrids());
+		int grid_x = ValleyGridX(center);
+		int grid_y = ValleyGridY(center);
+
+		int offset = (int)RandomRange(max_offset) - max_offset / 2;
+
+		DEBUG(map, 9, "Choosing center (%i,%i), radius %i, offset %i", grid_x, grid_y, radius, offset);
+
+		for (int x = max(0, grid_x - radius); x < min((int)(MapSizeX() / VALLEY_GRID_SIZE), grid_x + radius); x++) {
+			for (int y = max(0, grid_y - radius); y < min((int)(MapSizeY() / VALLEY_GRID_SIZE), grid_y + radius); y++) {
+				ValleyGridIndex v = ValleyGridXY(x, y);
+				if (init) {
+					if (valley_grid[v] == -1) {
+						valley_grid[v] = Clamp(500 + offset, 0, 1000);
+					}
+				} else {
+	  				valley_grid[v] = Clamp(valley_grid[v] + offset, 0, 1000);
+				}
+
+				DEBUG(map, 9, ".... Modifying (%i,%i) to %i", x, y, valley_grid[v]);
+			}
+		}
+	}
+}
+
+/** Initializes the grid of multipliers used for generating wider valley widths.
+ *  In a first step, large sections of 10x10 grid sections (i.e. 160x160 tiles) are
+ *  chosen in a random manner, and initialized to the same value.  An already distributed
+ *  value will *not* be overwritten again in this step.  Thus, we get a mosaic of bigger
+ *  and smaller areas set to the same value.  Indices that receive no value will be set to
+ *  the default value 500 (i.e. half the default width) afterwards.  This way, things get
+ *  less random if the wider_valleys_randomness is decreased.  The default value 1000 is
+ *  chosen such that each index will in average be attempted to be written two times.
+ *  But... things are random.
+ *
+ *  Then, in two further steps, bigger and smaller sections of the grid are altered by
+ *  applying some bigger or smaller offset, that is also chosen in a random manner.
+ *  This way, the bigger wider_valleys_randomness is, the more diverse the values will
+ *  become, as the areas overwrite each other more often.
+ *
+ *  Example: The idea is that wider_valleys_randomness trigers grid values like:
+ *
+ *           0                  100                1000                10000
+ *
+ *    500 500 500 500     351 351 500 500     779 779 779 500      779 939 339 509
+ *    500 500 500 500     351 351 500 500     830 850 500 500      123  84 393 129
+ *    500 500 500 500     500 500 500 500     112 449 531 493      549 129 789 999
+ *    500 500 500 500     500 500 500 893     112 449 531 505      123 299 505 431
+ */
+void RainfallRiverGenerator::InitializeValleyGrid(int *valley_grid)
+{
+	for (ValleyGridIndex v = 0; v < GetNumberOfValleyGrids(); v++) {
+		valley_grid[v] = -1;
+	}
+
+	int randomness = _settings_newgame.game_creation.rainfall.wider_valleys_randomness;
+	this->ModifyValleyGrid(valley_grid, (randomness * (GetNumberOfValleyGrids() / 200)) / 1000, 10, 1000, true);
+
+	for (ValleyGridIndex v = 0; v < GetNumberOfValleyGrids(); v++) {
+		if (valley_grid[v] == -1) {
+			valley_grid[v] = 500;
+		}
+	}
+
+	this->ModifyValleyGrid(valley_grid, (randomness * (GetNumberOfValleyGrids() / 100)) / 1000, 8, 600, false);
+	this->ModifyValleyGrid(valley_grid, (randomness * (GetNumberOfValleyGrids() / 30)) / 1000, 4, 200, false);
+
+	for (ValleyGridIndex v = 0; v < GetNumberOfValleyGrids(); v++) {
+		DEBUG(map, 9, "Result: ValleyGrid(%i,%i) = %i", ValleyGridX(v), ValleyGridY(v), valley_grid[v]);
+	}
+}
+
 void RainfallRiverGenerator::GenerateWiderRivers(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles)
 {
+	/* Set up multipliers on wide valley widths in a probabilistic manner.  Controlled by the wider_valleys_randomness.  Each index of the grid
+	 * corresponds to a 16x16 section of tiles on map.  I.e. the aim is generating larger sections of map with the same kind of behaviour.
+	 * E.g. one valley that is quite narrow, and 100 tiles away another valley that is quite wide.
+	 */
+	int *valley_grid = CallocT<int>(GetNumberOfValleyGrids());
+	this->InitializeValleyGrid(valley_grid);
+
 	/* If configured, generate wider rivers or valleys.  The scheme for aquiring the affected tiles is the same
 	 * in both cases.
 	 */
 	if (_settings_newgame.game_creation.rainfall.wider_rivers_enabled > 0) {
-		this->DoGenerateWiderRivers(true, false, water_flow, water_info, define_lakes_iterator, water_tiles);
+		this->DoGenerateWiderRivers(true, false, water_flow, water_info, define_lakes_iterator, valley_grid, water_tiles);
 	}
 	if (_settings_newgame.game_creation.rainfall.wider_valleys_enabled > 0) {
-		this->DoGenerateWiderRivers(false, true, water_flow, water_info, define_lakes_iterator, water_tiles);
+		this->DoGenerateWiderRivers(false, true, water_flow, water_info, define_lakes_iterator, valley_grid, water_tiles);
 	}
+
+	delete valley_grid;
 }
 
 /* ========================================================= */
