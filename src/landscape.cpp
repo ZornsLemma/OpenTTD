@@ -934,7 +934,7 @@ static void CreateDesertOrRainForest()
 /**
  * Actually (try to) create some rivers.
  */
-static void CreateRivers()
+static bool CreateRivers()
 {
 	if (_settings_game.game_creation.amount_of_rivers > 0) {
 		RiverGenerator *river_generator;
@@ -946,13 +946,17 @@ static void CreateRivers()
 			default: NOT_REACHED();
 		}
 
-		river_generator->GenerateRivers();
+		bool towns_generated = river_generator->GenerateRivers();
 
 		delete river_generator;
+
+		return towns_generated;
+	} else {
+		return false;
 	}
 }
 
-void GenerateLandscape(byte mode)
+bool GenerateLandscape(byte mode)
 {
 	/** Number of steps of landscape generation */
 	enum GenLandscapeSteps {
@@ -1056,7 +1060,7 @@ void GenerateLandscape(byte mode)
 		_river_iteration = NULL;
 	}
 
-	CreateRivers();
+	return CreateRivers();
 }
 
 void OnTick_Town();

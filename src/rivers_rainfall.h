@@ -20,6 +20,7 @@
 #include "terraform_func.h"
 #include "tile_map.h"
 #include "tile_type.h"
+#include "townname_type.h"
 
 #include "core/random_func.hpp"
 #include "pathfinder/npf/aystar.h"
@@ -1312,13 +1313,14 @@ private:
 	void CalculateTownScoreStepOne(TownScore *town_scores, uint x, uint y, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int max_river_flow, int max_lake_size);
 	void CalculateTownScoreStepTwo(TownScore *town_scores, uint x, uint y, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
 
+	bool GenerateTowns(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int max_river_flow);
 public:
 	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);
 	int GetWideRiverBoundForFlow(int flow);
 	inline int GetFlowNeededForWideRiverBound(int bound) { return this->wide_river_bounds[bound]; }
 
 	RainfallRiverGenerator();
-	virtual void GenerateRivers();
+	virtual bool GenerateRivers();
 };
 
 #endif /* RIVERS_RAINFALL_H */

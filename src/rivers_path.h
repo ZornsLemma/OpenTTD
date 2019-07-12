@@ -38,7 +38,7 @@ private:
 
 public:
 	PathRiverGenerator() {}
-	virtual void GenerateRivers();
+	virtual bool GenerateRivers();
 
 
 };

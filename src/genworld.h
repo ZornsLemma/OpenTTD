@@ -143,7 +143,7 @@ struct RiverGenerator {
 public:
 	virtual ~RiverGenerator() {}
 
-	virtual void GenerateRivers() = 0;
+	virtual bool GenerateRivers() = 0;
 };
 
 /** Definition of a parameter for a town placer.

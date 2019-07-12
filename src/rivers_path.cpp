@@ -69,10 +69,10 @@ bool PathRiverGenerator::FindSpring(TileIndex tile, void *user_data)
 	return true;
 }
 
-void PathRiverGenerator::GenerateRivers()
+bool PathRiverGenerator::GenerateRivers()
 {
 	int amount = _settings_game.game_creation.amount_of_rivers;
-	if (amount == 0) return;
+	if (amount == 0) return false;
 
 	uint wells = ScaleByMapSize(4 << _settings_game.game_creation.amount_of_rivers);
 	SetGeneratingWorldProgress(GWP_RIVER, wells + 256 / 64); // Include the tile loop calls below.
@@ -91,6 +91,8 @@ void PathRiverGenerator::GenerateRivers()
 		if (i % 64 == 0) IncreaseGeneratingWorldProgress(GWP_RIVER);
 		RunTileLoop();
 	}
+
+	return false;
 }
 
 /**

@@ -130,12 +130,12 @@ static void _GenerateWorld(void *)
 			ConvertGroundTilesIntoWaterTiles();
 			IncreaseGeneratingWorldProgress(GWP_OBJECT);
 		} else {
-			GenerateLandscape(_gw.mode);
+			bool towns_generated = GenerateLandscape(_gw.mode);
 			GenerateClearTile();
 
 			/* only generate towns, tree and industries in newgame mode. */
 			if (_game_mode != GM_EDITOR) {
-				if (!GenerateTowns(_settings_game.economy.town_layout)) {
+				if (!towns_generated && !GenerateTowns(_settings_game.economy.town_layout)) {
 					_cur_company.Restore();
 					HandleGeneratingWorldAbortion();
 					return;

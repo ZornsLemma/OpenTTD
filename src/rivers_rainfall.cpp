@@ -6203,6 +6203,15 @@ void RainfallRiverGenerator::CalculateTownScoreStepTwo(TownScore *town_scores, u
 			  town_score->flat_score, town_score->min_height, town_score->average_height, town_score->max_height);
 }
 
+/* ========================================================= */
+/* ======= Actual town placement in River Generator = ====== */
+/* ========================================================= */
+
+bool RainfallRiverGenerator::GenerateTowns(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int max_river_flow)
+{
+	return false;
+}
+
 /** The generator function.  The following steps are performed in this order when generating rivers:
  *  (1) Calculate a height index, for fast iteration over all tiles of a particular heightlevel.
  *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
@@ -6225,7 +6234,7 @@ void RainfallRiverGenerator::CalculateTownScoreStepTwo(TownScore *town_scores, u
  * (19) Another final call to lowering tiles until valid for rivers.
  * (20) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
-void RainfallRiverGenerator::GenerateRivers()
+bool RainfallRiverGenerator::GenerateRivers()
 {
 	int64 base_millis = GetCurrentTimeMillis();
 
@@ -6387,6 +6396,13 @@ void RainfallRiverGenerator::GenerateRivers()
 
 	delete this->lake_connected_component_calculator;
 
+	bool towns_generated;
+	if (_game_mode != GM_EDITOR && _settings_newgame.game_creation.town_placer == TWP_RAINFALL) {
+		towns_generated = this->GenerateTowns(water_flow, water_info, define_lakes_iterator, max_river_flow);
+	} else {
+		towns_generated = false;
+	}
+
 	/* Debug code: Store the results of the iterators in a public array, to be able to query them in the LandInfoWindow.
 	 *             Without that possibility, debugging those values would be really hard. */
 	if (_number_of_lower_tiles != NULL) {
@@ -6444,6 +6460,8 @@ void RainfallRiverGenerator::GenerateRivers()
 	delete lower_iterator;
 	delete flow_iterator;
 	delete height_index;
+
+	return towns_generated;
 }
 
 RainfallRiverGenerator::RainfallRiverGenerator()
