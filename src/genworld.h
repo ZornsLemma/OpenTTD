@@ -103,4 +103,12 @@ void StartScenarioEditor();
 
 extern bool _generating_world;
 
+/* Just a small base class for RiverGenerators. */
+struct RiverGenerator {
+public:
+	virtual ~RiverGenerator() {}
+
+	virtual void GenerateRivers() = 0;
+};
+
 #endif /* GENWORLD_H */

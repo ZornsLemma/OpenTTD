@@ -68,6 +68,7 @@ pbs.cpp
 progress.cpp
 rail.cpp
 rev.cpp
+rivers_path.cpp
 road.cpp
 roadstop.cpp
 screenshot.cpp
@@ -302,6 +303,7 @@ rail.h
 rail_gui.h
 rail_type.h
 rev.h
+rivers_path.h
 road_cmd.h
 road_func.h
 road_gui.h
