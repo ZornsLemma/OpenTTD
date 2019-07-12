@@ -64,6 +64,7 @@
 #include "roadveh.h"
 #include "fios.h"
 #include "strings_func.h"
+#include "rivers_rainfall.h"
 
 #include "void_map.h"
 #include "station_base.h"

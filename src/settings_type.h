@@ -270,6 +270,25 @@ struct NetworkSettings {
 #endif
 };
 
+/** Settings for the rainfall river generator */
+struct RainfallSettings {
+	int32 flow_for_river;                                 ///< flow necessary to form a river
+	int32 flow_per_lake_volume;                           ///< flow per lake volume
+	int16 number_of_flow_modifications;                   ///< number of flow modifications per 1000 tiles
+	byte  wider_rivers_enabled;                           ///< wether to enable wider rivers
+	int16 wider_rivers_multiplier;                        ///< multiplier to use when deciding on wider rivers
+	byte  wider_valleys_enabled;                          ///< wether to enable wider valleys
+	int16 wider_valleys_multiplier;                       ///< Multiplier on river width; the resulting number of tiles will be inspected at each side of the river
+	int16 wider_valleys_randomness;                       ///< Randomness when deciding on the width of wider valleys.
+
+	uint16 lake_outflow_canyon_probability;                ///< probability (measured in 1/1000) that an outflow canyon is digged for the lake at hand
+	uint16 lake_reduce_to_guaranteed_probability;          ///< probability (measured in 1/1000) that a lake is reduced to its guaranteed tiles
+	uint16 lake_island_probability;                        ///< probability (measured in 1/1000) that a lake tile becomes an island center
+	uint16 lake_island_max_size;                           ///< RandomRange(<this number>) is the (maximum) number of tiles of a generated island
+	uint16 lake_shore_probability;                         ///< probability (measured in 1/1000) that the algorithm starts generating additional land at a shore tile of a lake
+	uint16 lake_shore_max_size;                            ///< RandomRange(<this number>) is the (maximum) number of tiles of one shore expansion region
+};
+
 /** Settings related to the creation of games. */
 struct GameCreationSettings {
 	uint32 generation_seed;                  ///< noise seed for world generation
@@ -293,6 +312,8 @@ struct GameCreationSettings {
 	byte   river_route_random;               ///< the amount of randomicity for the route finding
 	byte   river_generator;                  ///< the river generator
 	byte   amount_of_rivers;                 ///< the amount of rivers
+
+	RainfallSettings rainfall;               ///< settings for the rainfall river generator
 };
 
 /** Settings related to construction in-game */

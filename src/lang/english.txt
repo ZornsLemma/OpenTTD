@@ -1069,6 +1069,7 @@ STR_RIVERS_NONE                                                 :None
 STR_RIVERS_FEW                                                  :Few
 STR_RIVERS_MODERATE                                             :Medium
 STR_RIVERS_LOT                                                  :Many
+STR_RIVERS_DETAIL_SETTINGS                                      :Detail settings
 
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced
@@ -1317,6 +1318,36 @@ STR_CONFIG_SETTING_RIVER_GENERATOR                              :River Generator
 STR_CONFIG_SETTING_RIVER_GENERATOR_HELPTEXT                     :Choose which river generator to use: The original one, or the rainfall river generator.  The latter offers various configuration options.
 STR_CONFIG_SETTING_RIVER_AMOUNT                                 :River amount: {STRING2}
 STR_CONFIG_SETTING_RIVER_AMOUNT_HELPTEXT                        :Choose how many rivers to generate
+
+STR_CONFIG_SETTING_RAINFALL_FLOW_FOR_RIVER                      :Flow necessary for river
+STR_CONFIG_SETTING_RAINFALL_FLOW_FOR_RIVER_HELPTEXT             :If a tile has more flow than this bound, a river will be generated.
+STR_CONFIG_SETTING_RAINFALL_FLOW_PER_LAKE_VOLUME                :Flow consumed per lake volume
+STR_CONFIG_SETTING_RAINFALL_FLOW_PER_LAKE_VOLUME_HELPTEXT       :For each tile, and each depth level of a lake, this amount of flow will be consumed.  The search for an outflow will be aborted once flow is exhausted.  If an outflow is found, it will nevertheless receive the complete flow.
+STR_CONFIG_SETTING_RAINFALL_NUMBER_OF_FLOW_MOD                  :Number of local flow modifications
+STR_CONFIG_SETTING_RAINFALL_NUMBER_OF_FLOW_MOD_HELPTEXT         :This number of times per 1000 tiles, a local flow modification in order to get nicer rivers will be tried
+STR_CONFIG_SETTING_RAINFALL_WIDER_RIVERS_ENABLED                :Enable wider rivers
+STR_CONFIG_SETTING_RAINFALL_WIDER_RIVERS_ENABLED_HELPTEXT       :Enable wider rivers, i.e. if some level of flow is reached, the river is not just one tile wider, but maybe two or three.
+STR_CONFIG_SETTING_RAINFALL_WIDER_RIVERS_MULTIPLIER             :Wider rivers multiplier
+STR_CONFIG_SETTING_RAINFALL_WIDER_RIVERS_MULTIPLIER_HELPTEXT    :If flow necessary for river is 50, and the multiplier is set to 10, one needs flow 500 for a river of width 2, flow 5000 for width 3, and so on.
+STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_ENABLED               :Enable wider valleys
+STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_ENABLED_HELPTEXT      :When generating landscape based on a heightmap of a mountainious area, with deep valleys, valleys in the generated landscape tend to be very small.  Enable this setting to automatically make all valleys having a river wider, to gain more usable space for things like cities.
+STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_MULTIPLIER            :Wider valleys multiplier
+STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_MULTIPLIER_HELPTEXT   :On each side of the river, up to this number of tiles (multiplied with the width of the river) will be lowered.  The new height of the tiles is chosen in a probabilistic manner; the nearer a tile is to the river, the higher the probability that it receives a low height.
+STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_RANDOMNESS            :Wider valleys randomness
+STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_RANDOMNESS_HELPTEXT   :Randomness for wider valleys.  0 means, always use half the maximum width defined by the multiplier, 1000 means use the default number of step to modify this value for 16x16 tile sections.
+STR_CONFIG_SETTING_RAINFALL_LAKE_CANYON_PROB                    :Probability for lake outflow canyon
+STR_CONFIG_SETTING_RAINFALL_LAKE_CANYON_PROB_HELPTEXT           :Probability (measured in 1/1000) for digging an outflow canyon for some lake (which lowers the lake, and transforms most of its tiles into land tiles)
+STR_CONFIG_SETTING_RAINFALL_LAKE_ONLY_GUARANTEED_PROB           :Probability for lake reduction to needed tiles
+STR_CONFIG_SETTING_RAINFALL_LAKE_ONLY_GUARANTEED_PROB_HELPTEXT  :Probability (measured in 1/1000) for reducing a lake to a minimal set of tiles needed to keep it connected.
+STR_CONFIG_SETTING_RAINFALL_LAKE_ISLAND_PROB                    :Probability for making a lake tile an island center
+STR_CONFIG_SETTING_RAINFALL_LAKE_ISLAND_PROB_HELPTEXT           :Probability (measured in 1/1000) for making some arbitrary lake tile the center of a new island.
+STR_CONFIG_SETTING_RAINFALL_LAKE_ISLAND_MAX_SIZE                :Maximum size of island
+STR_CONFIG_SETTING_RAINFALL_LAKE_ISLAND_MAX_SIZE_HELPTEXT       :A generated island will have some random number of tiles, at most this number (note: this refers to one step of island creation, multiple islands may connect with each other and the shore)
+STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_PROB                     :Probability for additional land tiles around a lake shore tile
+STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_PROB_HELPTEXT            :Probability (measured in 1/1000) for creating additional land tiles around some shore tile of a lake
+STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_MAX_SIZE                 :Maximum number of new land tiles around shore tile
+STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_MAX_SIZE_HELPTEXT        :In one step of creating additional land tiles around a shore tile, a random number of land tiles, but not more than this number will be generated
+
 STR_CONFIG_SETTING_TREE_PLACER                                  :Tree placer algorithm: {STRING2}
 STR_CONFIG_SETTING_TREE_PLACER_HELPTEXT                         :Choose the distribution of trees on the map: 'Original' plants trees uniformly scattered, 'Improved' plants them in groups
 STR_CONFIG_SETTING_TREE_PLACER_NONE                             :None
