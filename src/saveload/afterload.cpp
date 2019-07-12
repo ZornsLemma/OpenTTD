@@ -55,7 +55,7 @@
 #include "../order_backup.h"
 #include "../error.h"
 #include "../disaster_vehicle.h"
-
+#include "../rivers_rainfall.h"
 
 #include "saveload_internal.h"
 
@@ -525,6 +525,11 @@ static inline bool MayHaveBridgeAbove(TileIndex t)
  */
 bool AfterLoadGame()
 {
+	if (_number_of_lower_tiles != NULL) {
+		free(_number_of_lower_tiles);
+		_number_of_lower_tiles = NULL;
+	}
+
 	SetSignalHandlers();
 
 	TileIndex map_size = MapSize();

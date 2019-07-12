@@ -12,6 +12,7 @@
 #ifndef LANDSCAPE_UTIL_H
 #define LANDSCAPE_UTIL_H
 
+#include "direction_type.h"
 #include "map_func.h"
 #include "slope_type.h"
 #include "debug.h"
@@ -116,6 +117,23 @@ public:
 	void Calculate(int heightlevel);
 };
 
+/** Small helper struct for sorting TileIndices using some given value.
+ */
+struct TileWithValue {
+	TileIndex tile;
+	uint value;
+
+	TileWithValue(TileIndex tile, uint value)
+	{
+		this->tile = tile;
+		this->value = value;
+	}
+
+	bool operator > (const TileWithValue& other) const
+    {
+        return (this->value > other.value);
+    }
+};
 #define EMPTY_NEIGHBOR_TILES { INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE }
 
 void StoreStraightNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);

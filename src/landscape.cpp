@@ -931,9 +931,6 @@ static void CreateDesertOrRainForest()
 	}
 }
 
-/* For now here, to avoid an linker error. */
-int *_number_of_lower_tiles = NULL;
-
 /**
  * Actually (try to) create some rivers.
  */
@@ -1037,6 +1034,11 @@ void GenerateLandscape(byte mode)
 	IncreaseGeneratingWorldProgress(GWP_LANDSCAPE);
 
 	if (_settings_game.game_creation.landscape == LT_TROPIC) CreateDesertOrRainForest();
+
+	if (_number_of_lower_tiles != NULL) {
+		free(_number_of_lower_tiles);
+		_number_of_lower_tiles = NULL;
+	}
 
 	CreateRivers();
 }

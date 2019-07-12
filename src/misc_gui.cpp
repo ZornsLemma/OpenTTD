@@ -25,6 +25,7 @@
 #include "querystring_gui.h"
 #include "core/geometry_func.hpp"
 #include "newgrf_debug.h"
+#include "rivers_rainfall.h"
 #include "zoom_func.h"
 
 #include "widgets/misc_widget.h"
