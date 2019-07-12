@@ -29,6 +29,7 @@
 #include "saveload/saveload.h"
 #include "progress.h"
 #include "error.h"
+#include "gui.h"
 
 #include "widgets/genworld_widget.h"
 
@@ -695,6 +696,10 @@ struct GenerateLandscapeWindow : public Window {
 
 			case WID_GL_RIVER_AMOUNT_PULLDOWN: // Amount of rivers
 				ShowDropDownMenu(this, _river_amount, _settings_newgame.game_creation.amount_of_rivers, WID_GL_RIVER_AMOUNT_PULLDOWN, 0, 0);
+				break;
+
+			case WID_GL_RIVER_EXPERT_SETTINGS_BUTTON: // Expert settings for rainfall river generator
+				ShowRainfallOptionsWindow(this);
 				break;
 
 			case WID_GL_SMOOTHNESS_PULLDOWN: // Map smoothness

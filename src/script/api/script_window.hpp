@@ -533,6 +533,11 @@ public:
 		 */
 		WC_GENERATE_LANDSCAPE                        = ::WC_GENERATE_LANDSCAPE,
 
+		/** Expert options for rainfall river generator; %Window numbers:
+		 *   - 0 = #RainfallOptions
+		 */
+		WC_RAINFALL_OPTIONS                          = ::WC_RAINFALL_OPTIONS,
+
 		/**
 		 * Progress report of landscape generation; %Window numbers:
 		 *   - 0 = #GenerationProgressWidgets
@@ -1323,6 +1328,11 @@ public:
 		WID_GL_WATER_NE                              = ::WID_GL_WATER_NE,                              ///< NE 'Water'/'Freeform'.
 		WID_GL_WATER_SE                              = ::WID_GL_WATER_SE,                              ///< SE 'Water'/'Freeform'.
 		WID_GL_WATER_SW                              = ::WID_GL_WATER_SW,                              ///< SW 'Water'/'Freeform'.
+	};
+
+	/** Widgets for the expert settings for the Rainfall River Generator */
+	enum RainfallOptionWidgets {
+
 	};
 
 	/** Widgets of the #CreateScenarioWindow class. */

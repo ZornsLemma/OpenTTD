@@ -2779,6 +2779,9 @@ STR_SE_MAPGEN_FLAT_WORLD_HEIGHT_UP                              :{BLACK}Move the
 
 STR_SE_MAPGEN_FLAT_WORLD_HEIGHT_QUERY_CAPT                      :{WHITE}Change height of flat land
 
+# Rainfall River Generator Expert Options
+STR_RAINFALL_CAPTION                                            :{WHITE}Configuration of Rainfall River Generator
+
 # Map generation progress
 STR_GENERATION_WORLD                                            :{WHITE}Generating World...
 STR_GENERATION_ABORT                                            :{BLACK}Abort

@@ -67,6 +67,7 @@ order_backup.cpp
 pbs.cpp
 progress.cpp
 rail.cpp
+rainfall_options_gui.cpp
 rev.cpp
 rivers_path.cpp
 road.cpp

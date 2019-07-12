@@ -79,6 +79,10 @@ enum CreateScenarioWidgets {
 	WID_CS_FLAT_LAND_HEIGHT_UP,    ///< Increase flat land height.
 };
 
+/** Widgets for the expert settings for the Rainfall River Generator */
+enum RainfallOptionWidgets {
+};
+
 /** Widgets of the #GenerateProgressWindow class. */
 enum GenerationProgressWidgets {
 	WID_GP_PROGRESS_BAR,  ///< Progress bar.

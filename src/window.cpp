@@ -1298,6 +1298,7 @@ static uint GetWindowZPriority(const Window *w)
 		case WC_MODAL_PROGRESS:
 		case WC_NETWORK_STATUS_WINDOW:
 		case WC_SAVE_PRESET:
+		case WC_RAINFALL_OPTIONS:
 			++z_priority;
 
 		case WC_GENERATE_LANDSCAPE:
