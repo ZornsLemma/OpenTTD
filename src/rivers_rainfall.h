@@ -1096,7 +1096,10 @@ struct River {
 	std::vector<TileIndex> tiles;
 	int max_flow;
 
-	River(int id) { this->id = id; this->tiles = std::vector<TileIndex>(); this->max_flow = 0; }
+	River *dest_river;
+	std::set<TileIndex> dest_river_connection;
+
+	River(int id) { this->id = id; this->tiles = std::vector<TileIndex>(); this->max_flow = 0; this->dest_river = NULL; this->dest_river_connection = std::set<TileIndex>(); }
 
 	inline void AddTile(TileIndex tile, int flow) { this->tiles.push_back(tile); this->max_flow = max(this->max_flow, flow); }
 	inline uint GetNumberOfTiles() { return this->tiles.size(); }
@@ -1232,6 +1235,7 @@ private:
 	void FixBadRiverSlopes(int *water_flow, byte *water_info);
 
 	void DeriveRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info);
+	void ConnectRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river);
 
 	bool IsIsolatedCorner(TileIndex neighbor_tiles[DIR_COUNT], Direction corner_direction, Direction adjacent_direction_one, Direction adjacent_direction_two);
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);

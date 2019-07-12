@@ -4722,6 +4722,64 @@ bool DeriveRiverBreadthFirstSearch::TakeNeighborTileIntoAccount(TileIndex tile)
 	}
 }
 
+/** Sets up connections between logical rivers, i.e. identifies the tiles where they meet, and sets up a reference chain
+ *  from upper to lower rivers.
+ */
+void RainfallRiverGenerator::ConnectRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	const int NUMBER_OF_FINAL_ITERATIONS = 5;
+
+	for (std::map<int, River*>::const_iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
+		River *curr_river = it->second;
+		int max_iteration = -1;
+		int z;
+
+		int max_flow = -1;
+		River *max_flow_river = NULL;
+
+		/* Have a look at the last few iterations, and identify the (within those tiles) adjacent river with the biggest flow (if any). */
+		for (z = curr_river->tiles.size() - 1; z >= 0 && (max_iteration == -1 || river_iteration[curr_river->tiles[z]] >= max_iteration - NUMBER_OF_FINAL_ITERATIONS); z--) {
+			TileIndex tile = curr_river->tiles[z];
+			if (max_iteration == -1) {
+				max_iteration = river_iteration[curr_river->tiles[z]];
+			}
+			StoreStraightNeighborTiles(tile, neighbor_tiles);
+			for (int v = 0; v < DIR_COUNT; v++) {
+				TileIndex neighbor_tile = neighbor_tiles[v];
+				if (neighbor_tile != INVALID_TILE && river_map[neighbor_tile] >= 0 && river_map[neighbor_tile] != curr_river->id) {
+					int other_river_id = river_map[neighbor_tile];
+					River *other_river = id_to_river[other_river_id];
+					if (other_river->GetMaxFlow() > curr_river->GetMaxFlow() && other_river->GetMaxFlow() > max_flow) {
+						max_flow = other_river->GetMaxFlow();
+						max_flow_river = other_river;
+					}
+				}
+			}
+		}
+
+		/* If such a river is found, set up the connection */
+		if (max_flow_river != NULL) {
+			curr_river->dest_river = max_flow_river;
+			for (int n = curr_river->tiles.size() - 1; n > z; n--) {
+				TileIndex tile = curr_river->tiles[n];
+				StoreStraightNeighborTiles(tile, neighbor_tiles);
+				for (int v = 0; v < DIR_COUNT; v++) {
+					TileIndex neighbor_tile = neighbor_tiles[v];
+					if (neighbor_tile != INVALID_TILE && river_map[neighbor_tile] == max_flow_river->id) {
+						curr_river->dest_river_connection.insert(neighbor_tile);
+					}
+				}
+			}
+
+			DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, "Connecting rivers: River %i (max flow %i) ends in river %i (max flow %i); the connection has " PRINTF_SIZE " tiles",
+															curr_river->id, curr_river->GetMaxFlow(), curr_river->dest_river->id, curr_river->dest_river->GetMaxFlow(),
+															curr_river->dest_river_connection.size());
+		}
+	}
+}
+
 /* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
@@ -5147,6 +5205,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  * (12) Lower tiles with not yet valid slope, until they are suitable for river.
  * (13) Improve bad inclined river slopes, i.e. (some of) those that have no direct upper or lower counterpart.
  * (14) Derive logical rivers.  Used for fine tuning like preventing upwards flow.  Might be useful for generating river names.
+ * (15) Set up connections between the logical rivers.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
@@ -5248,6 +5307,8 @@ void RainfallRiverGenerator::GenerateRivers()
 	std::map<int, River*> id_to_river = std::map<int, River*>();
 	this->DeriveRivers(river_map, river_iteration, id_to_river, water_flow, water_info);
 
+	/* (15) Set up connections between the logical rivers (i.e. where they join) */
+	this->ConnectRivers(river_map, river_iteration, id_to_river);
 
 	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);
