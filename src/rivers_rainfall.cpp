@@ -18,8 +18,11 @@
 #include "map_func.h"
 #include "slope_func.h"
 #include "settings_type.h"
+#include "strings_func.h"
 #include "terraform_func.h"
 #include "tile_map.h"
+#include "town.h"
+#include "townname_func.h"
 #include "water_map.h"
 
 #include "core/alloc_func.hpp"
@@ -6208,9 +6211,169 @@ void RainfallRiverGenerator::CalculateTownScoreStepTwo(TownScore *town_scores, u
 /* ======= Actual town placement in River Generator = ====== */
 /* ========================================================= */
 
+bool RainfallRiverGenerator::CreateTown(TileIndex tile, uint32 &townnameparts, TownNames &town_names, bool create_city, uint &cities_generated, uint &towns_generated, bool &do_continue)
+{
+	tile = AlignTileToGrid(tile, _settings_game.economy.town_layout);
+	if (!TownCanBePlacedHere(tile).Failed() && GenerateTownName(&townnameparts, &town_names)) {
+		if (!Town::CanAllocateItem()) {
+			do_continue = false;
+			return false;
+		}
+
+		Town *town = new Town(tile);
+
+		DoCreateTown(town, tile, townnameparts, TSZ_RANDOM, create_city, _settings_game.economy.town_layout, false);
+		bool created = UndoTownCreationIfNecessary(town);
+		if (created) {
+			if (create_city) {
+				cities_generated++;
+			} else {
+				towns_generated++;
+			}
+		    return true;
+		} else {
+			return false;
+		}
+	} else {
+		return false;
+	}
+}
+
+void RainfallRiverGenerator::PlaceTowns(std::map<TownPlacerKey, TownPlacer*> key_to_placer, TownScore *town_scores, uint &cities_generated,
+										uint number_of_cities, uint city_probability, uint &towns_generated, uint number_of_towns,
+											   std::vector<TownPlacerConfig> &town_placer_configs, uint32 &townnameparts, TownNames &town_names, bool &do_continue)
+{
+	uint number_of_town_grids = GetNumberOfTownGrids();
+
+	int weight_sum = 0;
+	for (uint n = 0; n < town_placer_configs.size(); n++) {
+		weight_sum += town_placer_configs[n].weight;
+	}
+
+	uint step = 0;
+	uint total_steps = MapSize() / 100;
+	TownPlacerConfig *config = NULL;
+	while (do_continue
+			  && step < total_steps
+			  && (   (city_probability > 0 && cities_generated < number_of_cities)
+				  || (city_probability < 1000 && towns_generated < number_of_towns))) {
+
+		/* Pick one of the TownPlacers according to their probabilities */
+		int r = RandomRange(weight_sum);
+		int curr_weight_sum = 0;
+		TownPlacer *placer = NULL;
+		for (uint n = 0; n < town_placer_configs.size(); n++) {
+			curr_weight_sum += town_placer_configs[n].weight;
+			if (curr_weight_sum >= r) {
+				TownPlacerKey key = town_placer_configs[n].town_placer;
+				placer = key_to_placer[key];
+				config = &town_placer_configs[n];
+				break;
+			}
+		}
+
+		bool create_city = (RandomRange(1000) < city_probability);
+
+		DEBUG(misc, RAINFALL_TOWN_LOG_LEVEL, "Started %s, create_city = %i", GetStringPtr(placer->GetName()), create_city);
+
+		/* ... and really try to found a city based on it.  Give it quite a lot of attempts if necessary, since some TownPlacers might
+		 * need a rather easy condition, whereas others might need a condition that is present just a couple of times on the whole map.
+		 * And we want to control things via the probabilities, not via the difficulties the TownPlacers have finding an appropriate
+	     * position.
+		 */
+		uint number_of_attempts = 1000;
+		uint number_of_tile_attempts = 50;
+		uint attempt = 0;
+
+		bool founded = false;
+		while (!founded && do_continue && attempt < number_of_attempts) {
+			TownGridIndex c = RandomRange(number_of_town_grids);
+			TownScore *score = &town_scores[c];
+
+			if (placer->PlaceInGridSection(c, score, config->parameter_map)) {
+				uint tile_attempt = 0;
+				while (!founded && do_continue && tile_attempt < number_of_tile_attempts) {
+					uint tx = TownGridX(c) * TOWN_GRID_SIZE + RandomRange(TOWN_GRID_SIZE);
+					uint ty = TownGridY(c) * TOWN_GRID_SIZE + RandomRange(TOWN_GRID_SIZE);
+					TileIndex tile = TileXY(tx, ty);
+					if (placer->PlaceAtTile(c, score, tile, config->parameter_map)) {
+						founded |= this->CreateTown(tile, townnameparts, town_names, create_city, cities_generated, towns_generated, do_continue);
+
+						if (founded) {
+							DEBUG(misc, RAINFALL_TOWN_LOG_LEVEL, "Founded %s at (%i,%i) in grid (%i,%i) based on placer %s in attempt %i, tile_attempt %i of step %i",
+										  (create_city ? "city" : "town"), TileX(tile), TileY(tile), TownGridX(c), TownGridY(c), GetStringPtr(placer->GetName()), attempt, tile_attempt, step);
+						}
+					}
+					tile_attempt++;
+				}
+			}
+			attempt++;
+		}
+
+		if (!founded) {
+			DEBUG(misc, RAINFALL_TOWN_LOG_LEVEL, "FAILURE: Unable to find a proper location for town placer [%s]", GetStringPtr(placer->GetName()));
+		}
+
+		step++;
+	}
+}
+
 bool RainfallRiverGenerator::GenerateTowns(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int max_river_flow)
 {
-	return false;
+	int max_lake_size = define_lakes_iterator->GetMaximumLakeSize();
+
+	int size = (MapSizeX() * MapSizeY()) / (1 << (TOWN_GRID_LOG + TOWN_GRID_LOG));
+	TownScore* town_scores = CallocT<TownScore>(size);
+
+	for (uint y = 0; y < MapSizeY() / TOWN_GRID_SIZE; y++) {
+		for (uint x = 0; x < MapSizeX() / TOWN_GRID_SIZE; x++) {
+			this->CalculateTownScoreStepOne(town_scores, x, y, water_flow, water_info, define_lakes_iterator, max_river_flow, max_lake_size);
+		}
+	}
+
+	for (uint y = 0; y < MapSizeY() / TOWN_GRID_SIZE; y++) {
+		for (uint x = 0; x < MapSizeX() / TOWN_GRID_SIZE; x++) {
+			this->CalculateTownScoreStepTwo(town_scores, x, y, water_flow, water_info, define_lakes_iterator);
+		}
+	}
+
+	/* The following code is based on the town generation in town_cmd */
+	byte _num_initial_towns[4] = {5, 11, 23, 46};  // very low, low, normal, high
+
+	uint difficulty = _settings_game.difficulty.number_towns;
+	uint total = (difficulty == (uint)CUSTOM_TOWN_NUMBER_DIFFICULTY) ? _settings_game.game_creation.custom_town_number : ScaleByMapSize(_num_initial_towns[difficulty] + (Random() & 7));
+	total = min(TownPool::MAX_SIZE, total);
+
+	uint number_of_cities = _settings_game.economy.larger_towns != 0 ? total / _settings_game.economy.larger_towns : 0;
+	uint number_of_towns = total - number_of_cities;// * 3;
+
+	DEBUG(misc, RAINFALL_TOWN_LOG_LEVEL, "Planning to create %i cities and %i towns", number_of_cities, number_of_towns);
+
+	uint32 townnameparts;
+	TownNames town_names;
+
+	uint cities_generated = 0;
+	uint towns_generated = 0;
+
+	std::vector<TownPlacer*> town_placers = GetAllTownPlacers();
+	std::map<TownPlacerKey, TownPlacer*> key_to_placer = std::map<TownPlacerKey, TownPlacer*>();
+	for (std::vector<TownPlacer*>::const_iterator it = town_placers.begin(); it != town_placers.end(); it++) {
+		TownPlacer* placer = *it;
+		key_to_placer[placer->GetKey()] = placer;
+	}
+
+	bool using_default_config = false;
+	std::map<TownPlacerPhase, std::vector<TownPlacerConfig> > phase_to_configs = DeserializeTownPlacerConfig(&town_placers, using_default_config);
+
+	bool do_continue = true;
+	this->PlaceTowns(key_to_placer, town_scores, cities_generated, number_of_cities, 1000, towns_generated, number_of_towns, phase_to_configs[TPP_PHASE_ONE_CITY], townnameparts, town_names, do_continue);
+	this->PlaceTowns(key_to_placer, town_scores, cities_generated, number_of_towns, 0, towns_generated, number_of_towns, phase_to_configs[TPP_PHASE_TWO_TOWN], townnameparts, town_names, do_continue);
+
+	for (std::vector<TownPlacer*>::iterator it = town_placers.begin(); it != town_placers.end(); it++) {
+		delete *it;
+	}
+
+	return true;
 }
 
 /** The generator function.  The following steps are performed in this order when generating rivers:
