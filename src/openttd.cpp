@@ -367,7 +367,9 @@ void MakeNewgameSettingsLive()
 	 * One suggestion there was to switch to std::string for those strings.  Would need code conversions at other places
 	 * though.
 	 */
-	_settings_game.game_creation.rainfall.town_placers = stredup(_settings_game.game_creation.rainfall.town_placers);
+	if (_settings_game.game_creation.rainfall.town_placers != NULL) {
+		_settings_game.game_creation.rainfall.town_placers = stredup(_settings_game.game_creation.rainfall.town_placers);
+	}
 
 	_old_vds = _settings_client.company.vehicle;
 

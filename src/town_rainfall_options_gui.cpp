@@ -176,6 +176,10 @@ struct TownPlacerGUIList {
 
 		for (std::vector<TownPlacerConfig>::const_iterator it = this->config.begin(); it != this->config.end(); it++) {
 			TownPlacerConfig curr_config = *it;
+			if (it != this->config.begin()) {
+				s += ",";
+			}
+
 			s += "{";
 
 			s += "placer:";
@@ -247,6 +251,15 @@ public:
 		this->lists[TPP_PHASE_ONE_CITY].scrollbar = this->GetScrollbar(WID_TROP_PHASE_ONE_SCROLLBAR);
 		this->lists[TPP_PHASE_TWO_TOWN].scrollbar = this->GetScrollbar(WID_TROP_PHASE_TWO_SCROLLBAR);
 
+		bool using_default_config = false;
+		std::map<TownPlacerPhase, std::vector<TownPlacerConfig> > phase_to_configs = DeserializeTownPlacerConfig(&this->town_placers, using_default_config);
+		this->lists[TPP_PHASE_ONE_CITY].config = phase_to_configs[TPP_PHASE_ONE_CITY];
+		this->lists[TPP_PHASE_TWO_TOWN].config = phase_to_configs[TPP_PHASE_TWO_TOWN];
+
+		if (using_default_config) {
+			SerializeTownPlacerConfig();
+		}
+
 		this->FinishInitNested(window_number);
 	}
 
@@ -297,6 +310,7 @@ public:
 				break;
 			case WID_TROP_PHASE_ONE_ADD_BUTTON: {
 				TownPlacerConfig config = TownPlacerConfig();
+				config.town_placer = TPK_INVALID;
 				config.weight = 100;
 				ShowTownPlacerEditWindow(this, 0, TownRainfallOptionsWindow::AddTownPlacerCallback, TPP_PHASE_ONE_CITY, config);
 				break;
@@ -517,12 +531,14 @@ struct TownPlacerEditWindow : Window {
 		}
 
 		/* If the passed config contains no town_placer, select the first one (if it exists) */
-		if (this->config.town_placer < 0 && this->town_placers.size() > 0) {
+		bool set_parameter_default_values = false;
+		if (this->town_placer_index < 0 && this->town_placers.size() > 0) {
 			this->town_placer_index = 0;
+			set_parameter_default_values = true;
 		}
 
 		this->InitNested(window_number);
-		this->OnTownPlacerSelected(false);
+		this->OnTownPlacerSelected(set_parameter_default_values);
 	}
 
 	~TownPlacerEditWindow()

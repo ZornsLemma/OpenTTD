@@ -519,4 +519,9 @@ public:
 
 std::vector<TownPlacer*> GetAllTownPlacers();
 
+void AddDefaultConfigForPhaseOne(std::vector<TownPlacer*>* town_placers, std::vector<TownPlacerConfig> &configs);
+void AddDefaultConfigForPhaseTwo(std::vector<TownPlacer*>* town_placers, std::vector<TownPlacerConfig> &configs);
+
+std::map<TownPlacerPhase, std::vector<TownPlacerConfig> > DeserializeTownPlacerConfig(std::vector<TownPlacer*>* town_placers, bool &using_default_config);
+
 #endif /* GENWORLD_H */
