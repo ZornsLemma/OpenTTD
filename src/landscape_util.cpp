@@ -370,6 +370,26 @@ Direction GetLowerDirectionForInclinedSlope(Slope inclined_slope)
 	}
 }
 
+/** Returns wether the two given directions are neighbor directions or equal.
+ */
+bool AreNeighborDirectionsOrEqual(Direction direction_one, Direction direction_two)
+{
+	if (direction_one == direction_two) {
+		return true;
+	} else if (direction_one >= DIR_NE && direction_one <= DIR_W) {
+		return abs(direction_one - direction_two) == 1;
+	} else if (direction_one == DIR_N) {
+		return direction_two == DIR_NW || direction_two == DIR_NE;
+	} else if (direction_one == DIR_NW) {
+		return direction_two == DIR_W || direction_two == DIR_N;
+	} else {
+		assert(false);
+
+		/* Should never be reached.  But avoid the compiler warning. */
+		return false;
+	}
+}
+
 /*================================ Angles <--> DirectionIndices ===================================*/
 /*=================================================================================================*/
 

@@ -124,6 +124,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL 9
 #define RAINFALL_MOVE_WATER_LOG_LEVEL 9
 #define RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL 9
+#define RAINFALL_DERIVE_RIVERS_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -1087,6 +1088,57 @@ public:
 	}
 };
 
+struct River {
+	static const int TILE_UNDECIDED = -2;
+	static const int TILE_PROCESSED_NO_RIVER = -1;
+
+	int id;
+	std::vector<TileIndex> tiles;
+	int max_flow;
+
+	River(int id) { this->id = id; this->tiles = std::vector<TileIndex>(); this->max_flow = 0; }
+
+	inline void AddTile(TileIndex tile, int flow) { this->tiles.push_back(tile); this->max_flow = max(this->max_flow, flow); }
+	inline uint GetNumberOfTiles() { return this->tiles.size(); }
+	inline int GetMaxFlow() { return this->max_flow; }
+};
+
+struct RainfallRiverGenerator;
+
+struct DeriveRiverBreadthFirstSearch : public BreadthFirstSearch {
+
+private:
+	int *water_flow;
+	byte *water_info;
+	int *river_map;
+	int *river_iteration;
+	River *river;
+	int max_flow_so_far;
+	std::map<int, int> iteration_to_max_flow;
+
+    int GetRequiredFlow(int bound);
+	RainfallRiverGenerator *generator;
+
+protected:
+	virtual bool ProcessTile(TileIndex tile);
+	virtual void StoreNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
+	virtual bool TakeNeighborTileIntoAccount(TileIndex tile);
+
+public:
+	DeriveRiverBreadthFirstSearch(int *water_flow, byte *water_info, int *river_map, int* river_iteration, RainfallRiverGenerator *generator)
+	{
+		this->water_flow = water_flow;
+		this->water_info = water_info;
+		this->river_map = river_map;
+		this->river_iteration = river_iteration;
+		this->iteration_to_max_flow = std::map<int, int>();
+		this->generator = generator;
+	}
+	virtual ~DeriveRiverBreadthFirstSearch() {}
+
+	void Init(River *river) { this->river = river; this->max_flow_so_far = 0; this->iteration_to_max_flow.clear(); }
+};
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,
@@ -1141,8 +1193,6 @@ private:
 	void ModifyFlow(int *water_flow, byte *water_info);
 
 	std::vector<int> wide_river_bounds;
-	int GetWideRiverBoundForFlow(int flow);
-	inline int GetFlowNeededForWideRiverBound(int bound) { return this->wide_river_bounds[bound]; }
 
 	void PrepareLake(TileIndex tile, int *water_flow, byte *water_info, DefineLakesIterator *lake_iterator, std::vector<TileWithValue> &extra_water_tiles);
 	void ChooseTileForExtraRiver(TileIndex tile,
@@ -1181,6 +1231,8 @@ private:
 	void RegisterPossibleNewBadInclinedTiles(std::set<TileIndex> &affected_tiles, std::set<TileIndex> &next_problem_tiles, TileIndex neighbor_tiles[DIR_COUNT], byte *water_info);
 	void FixBadRiverSlopes(int *water_flow, byte *water_info);
 
+	void DeriveRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info);
+
 	bool IsIsolatedCorner(TileIndex neighbor_tiles[DIR_COUNT], Direction corner_direction, Direction adjacent_direction_one, Direction adjacent_direction_two);
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
 	int StoreNeighborTilesPlannedForWaterAndGaps(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
@@ -1203,6 +1255,8 @@ private:
 
 public:
 	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);
+	int GetWideRiverBoundForFlow(int flow);
+	inline int GetFlowNeededForWideRiverBound(int bound) { return this->wide_river_bounds[bound]; }
 
 	RainfallRiverGenerator();
 	virtual void GenerateRivers();

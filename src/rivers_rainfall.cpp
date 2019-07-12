@@ -4511,6 +4511,218 @@ void RainfallRiverGenerator::FixBadRiverSlopes(int *water_flow, byte *water_info
 }
 
 /* ========================================================= */
+/* ============== Derive logical rivers ==================== */
+/* ========================================================= */
+
+/** So far, we thought about rivers just using single tiles, that were declared river or not.
+ *  Here, we set up a concept of logical rivers.  E.g. such a river might start at (200, 353) and end up in (573, 987) and consist of 7359 tiles.
+ */
+void RainfallRiverGenerator::DeriveRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	/* Find all river tiles, and sort them */
+	std::vector<TileWithHeightAndFlow> tiles = std::vector<TileWithHeightAndFlow>();
+	for (TileIndex tile = 0; tile < MapSize(); tile++) {
+
+		if (WasProcessed(water_info, tile)) {
+			int height = GetTileZ(tile);
+			int flow = water_flow[tile];
+			tiles.push_back(TileWithHeightAndFlow(tile, height, flow));
+		}
+	}
+
+	std::sort(tiles.rbegin(), tiles.rend());
+	DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, "Starting DeriveRivers with " PRINTF_SIZE " water tiles", tiles.size());
+
+	int next_river_id = 0;
+
+	DeriveRiverBreadthFirstSearch *search = new DeriveRiverBreadthFirstSearch(water_flow, water_info, river_map, river_iteration, this);
+
+	/* Go top-down */
+	for (std::vector<TileWithHeightAndFlow>::const_iterator it = tiles.begin(); it != tiles.end(); it++) {
+		TileIndex tile = it->tile;
+
+		/* If a tile is not yet part of a river, create a new river */
+		if (river_map[tile] == River::TILE_UNDECIDED) {
+
+			/* If the beginning of the river is higher than its highest point (something we want to correct using the River struct
+			 * we set up here), then we will not start at its beginning.  Thus, if there are not yet processed neighbor tiles with
+			 * smaller flow, step backwards as far as we can.  Include diagonal neighbor tiles, to decrease the chances that
+			 * neighbor tiles with equal flow (possible if diagonal flow triggers additional tiles being added) disturb that search.
+			 */
+			bool progress;
+			do {
+				progress = false;
+				int prev_flow = water_flow[tile];
+				StoreAllNeighborTiles(tile, neighbor_tiles);
+				for (int n = 0; n < DIR_COUNT; n++) {
+					if (neighbor_tiles[n] != INVALID_TILE && WasProcessed(water_info, neighbor_tiles[n])
+						&& water_flow[neighbor_tiles[n]] < prev_flow && river_map[neighbor_tiles[n]] == River::TILE_UNDECIDED) {
+						DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, ".... Smaller neighbor flow %i < %i detected, delegating from tile (%i,%i) to tile (%i,%i)",
+								  water_flow[neighbor_tiles[n]], prev_flow, TileX(tile), TileY(tile), TileX(neighbor_tiles[n]), TileY(neighbor_tiles[n]));
+						tile = neighbor_tiles[n];
+						progress = true;
+						break;
+					}
+				}
+			} while (progress);
+
+			/* Create river */
+			int curr_river_id = next_river_id;
+			River *river = new River(curr_river_id);
+			id_to_river[curr_river_id] = river;
+			next_river_id++;
+
+			DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, ".... Started river %i at (%i,%i)", curr_river_id, TileX(tile), TileY(tile));
+
+			search->Init(river);
+			search->PerformSearch(tile);
+
+			/* Fetch final iteration, and not that it was incremented before the loop in PerformSearch terminated, thus decrement it. */
+			int iteration = search->GetIteration() - 1;
+
+			DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, ".... Completed river %i after iteration #%i, size is %i tiles; contains tiles:",
+						curr_river_id, iteration, river->GetNumberOfTiles());
+
+			for (int n = 0; n < (int)river->tiles.size(); n++) {
+				DEBUG(map, 9, "........ Tile (%i,%i)", TileX(river->tiles[n]), TileY(river->tiles[n]));
+			}
+
+			bool stop = false;
+			/* Empty array, as we search for all directions above, but only for straight neighbor tiles below. */
+			for (int n = 0; n < DIR_COUNT; n++) {
+				neighbor_tiles[n] = INVALID_TILE;
+			}
+
+			/* If the end of the river reaches the start of another river, concatenate them */
+			for (int n = (int)river->tiles.size() - 1; !stop && n >= 0 && river_iteration[river->tiles[n]] == iteration; n--) {
+				TileIndex upper_river_tile = river->tiles[n];
+				StoreStraightNeighborTiles(upper_river_tile, neighbor_tiles);
+
+				for (int z = 0; !stop && z < DIR_COUNT; z++) {
+					TileIndex neighbor_tile = neighbor_tiles[z];
+					if (neighbor_tile != INVALID_TILE && river_map[neighbor_tile] != River::TILE_UNDECIDED && river_map[neighbor_tile] != River::TILE_PROCESSED_NO_RIVER
+							&& river_map[neighbor_tile] != curr_river_id && river_iteration[neighbor_tile] == 0) {
+						DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, ".... Its end near (%i,%i) is adjacent to the beginning of river %i, will merge them.",
+									TileX(upper_river_tile), TileY(upper_river_tile), river_map[neighbor_tile]);
+
+						River *lower_river = id_to_river[river_map[neighbor_tile]];
+						for (int w = 0; w < (int)lower_river->tiles.size(); w++) {
+							TileIndex lower_river_tile = lower_river->tiles[w];
+							river_map[lower_river_tile] = curr_river_id;
+							river_iteration[lower_river_tile] += (iteration + 1);
+							river->tiles.push_back(lower_river_tile);
+						}
+						id_to_river.erase(lower_river->id);
+
+						stop = true;
+					}
+				}
+			}
+		}
+	}
+
+	delete search;
+}
+
+bool DeriveRiverBreadthFirstSearch::ProcessTile(TileIndex tile)
+{
+	if (WasProcessed(this->water_info, tile)) {
+		this->river_map[tile] = this->river->id;
+		this->river_iteration[tile] = this->GetIteration();
+		this->river->AddTile(tile, this->water_flow[tile]);
+		this->max_flow_so_far = max(this->max_flow_so_far, this->water_flow[tile]);
+
+		if (this->iteration_to_max_flow.find(this->GetIteration()) == this->iteration_to_max_flow.end()) {
+			this->iteration_to_max_flow[this->GetIteration()] = this->water_flow[tile];
+		} else {
+			this->iteration_to_max_flow[this->GetIteration()] = max(this->iteration_to_max_flow[this->GetIteration()], this->water_flow[tile]);
+		}
+	} else {
+		this->river_map[tile] = River::TILE_PROCESSED_NO_RIVER;
+		this->river_iteration[tile] = River::TILE_PROCESSED_NO_RIVER;
+	}
+	return false;
+}
+
+void DeriveRiverBreadthFirstSearch::StoreNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT])
+{
+	StoreStraightNeighborTiles(tile, neighbor_tiles);
+}
+
+/** We set up the river by stepping top-down.  While doing so, flow is basically supposed to increase.
+ *  Due to some influences (e.g. merging side rivers) that rule is sometimes violated.  Thus, we somewhat
+ *  relax the condition "increasing flow" in order to be able to step over short sections where that
+ *  condition is violated, without creating new rivers (that might be tiny if just a few tiles are
+ *  cut from the river) in a senseless manner.
+ */
+int DeriveRiverBreadthFirstSearch::GetRequiredFlow(int bound)
+{
+	int base_iteration = max(0, this->GetIteration() - 2);
+	int base_flow;
+
+	/* If rivers join, there is some section where the flow before the join, and the summarized flow exist in the same iterations.
+	 * Accept the previous flow for some iterations, to avoid accidentally excluding tiles, which become tiny micro-rivers afterwards...
+	 */
+	if (this->iteration_to_max_flow.find(base_iteration) != this->iteration_to_max_flow.end()) {
+		base_flow = this->iteration_to_max_flow[base_iteration];
+	} else {
+		base_flow = this->max_flow_so_far;
+	}
+
+	/* Accept a somewhat lower flow, to deal with situations where the original flow calculation took a somewhat different path than
+     * our breadth first search (that happens after wide river generation, and thus operates on a completely different set of tiles)
+     * takes.  Example: 131959, then 131976, then 131965, then 131971, then 132053, then 135858 might be a perfectly legal series of
+     * flow values.
+	 */
+	int factor = 19;
+	if (bound >= 2 && bound <= 5) {
+		factor -= (bound - 1);
+	} else if (bound > 5) {
+		factor = 15;
+	}
+	return (factor * base_flow) / 20;
+}
+
+
+bool DeriveRiverBreadthFirstSearch::TakeNeighborTileIntoAccount(TileIndex tile)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	if (this->river_map[tile] == River::TILE_UNDECIDED
+		  && WasProcessed(this->water_info, tile)
+		  && this->water_flow[tile] > 1) {
+
+		int bound = this->generator->GetWideRiverBoundForFlow(this->water_flow[tile]);
+		if (this->water_flow[tile] > this->GetRequiredFlow(bound)) {
+			return true;
+		} else {
+			/* Sections where rivers join are somewhat difficult.  Sometimes, the small river flows some time parallel to the big one.  The wider rivers
+			 * algorithm (which just in a probabilistic way adds more tiles to a big river) may consume parts of such a small parallel river, but not all of
+			 * them.  If we just stick to the rule "flow must increase" we will not find the remaining tiles when processing both the small and the big river.
+			 * Thus, we also accept tiles that have an already processed neighbor tile of our river, whose flow somehow points to our tile.
+			 * We don´t expect exact flow (as flow directions aren´t updated anyway when producing big rivers), neighbor directions suffice also.
+			 * At least this should prevent stepping up another river completely against its flow direction.
+			 */
+			StoreAllNeighborTiles(tile, neighbor_tiles);
+			for (int n = 0; n < DIR_COUNT; n++) {
+				TileIndex neighbor_tile = neighbor_tiles[n];
+				if (neighbor_tile != INVALID_TILE && WasProcessed(this->water_info, neighbor_tile) && this->river_map[neighbor_tile] == this->river->id) {
+					Direction direction_to_previous = (Direction)n;
+					Direction direction_from_previous = GetOppositeDirection(direction_to_previous);
+					Direction flow_direction_from_previous = GetFlowDirection(water_info, neighbor_tile);
+					return AreNeighborDirectionsOrEqual(direction_from_previous, flow_direction_from_previous);
+				}
+			}
+			return false;
+		}
+	} else {
+		return false;
+	}
+}
+
+/* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
 
@@ -4536,7 +4748,6 @@ void RainfallRiverGenerator::StoreNeighborTilesPlannedForWater(TileIndex tile, T
 		}
 	}
 }
-
 
 /** Based on the situation on the tiles around, this function determines wether a tile can be transformed to an inclined slope of some direction
  *  in terms of water flow around.
@@ -4935,6 +5146,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  * (11) Try to fix them by moving them, or by declaring them no water if they are not necessary for keeping the river connected.
  * (12) Lower tiles with not yet valid slope, until they are suitable for river.
  * (13) Improve bad inclined river slopes, i.e. (some of) those that have no direct upper or lower counterpart.
+ * (14) Derive logical rivers.  Used for fine tuning like preventing upwards flow.  Might be useful for generating river names.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
@@ -5026,6 +5238,17 @@ void RainfallRiverGenerator::GenerateRivers()
      */
 	this->FixBadRiverSlopes(water_flow, water_info);
 
+	/* (14) Derive logical rivers.  Used some fine tuning like preventing upwards flow.  Might be used for generating river names. */
+	int *river_map = CallocT<int>(MapSizeX() * MapSizeY());
+	int *river_iteration = CallocT<int>(MapSizeX() * MapSizeY());
+	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
+		river_map[n] = River::TILE_UNDECIDED;
+		river_iteration[n] = River::TILE_UNDECIDED;
+	}
+	std::map<int, River*> id_to_river = std::map<int, River*>();
+	this->DeriveRivers(river_map, river_iteration, id_to_river, water_flow, water_info);
+
+
 	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);
 
@@ -5062,6 +5285,11 @@ void RainfallRiverGenerator::GenerateRivers()
 	/*** (Debugging code end ***/
 
 	/* Delete iterators last, as the data arrays constructed by them are in use outside them */
+	for (std::map<int, River*>::iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
+		delete it->second;
+	}
+	delete river_map;
+	delete river_iteration;
 	delete define_lakes_iterator;
 	delete lower_iterator;
 	delete flow_iterator;
