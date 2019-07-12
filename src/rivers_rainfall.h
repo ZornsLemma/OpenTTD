@@ -977,6 +977,11 @@ struct OnlyGuaranteedLakeModificator : public LakeModificator {
 							std::set<TileIndex> &discarded_lake_tiles);
 };
 
+struct IslandLakeModificator : public LakeModificator {
+	virtual void ModifyLake(Lake *lake, std::map<TileIndex, TileIndex> &inflow_tile_to_center, std::set<TileIndex> &guaranteed_water_tiles,
+							std::set<TileIndex> &discarded_lake_tiles);
+};
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,

@@ -2343,6 +2343,22 @@ void OnlyGuaranteedLakeModificator::ModifyLake(Lake *lake, std::map<TileIndex, T
 	}
 }
 
+void IslandLakeModificator::ModifyLake(Lake *lake, std::map<TileIndex, TileIndex> &inflow_tile_to_center, std::set<TileIndex> &guaranteed_water_tiles,
+													   std::set<TileIndex> &discarded_lake_tiles)
+{
+	std::set<TileIndex>* lake_tiles = lake->GetLakeTiles();
+	for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
+		if (RandomRange(MAX_RAINFALL_PROBABILITY) < _settings_newgame.game_creation.rainfall.lake_island_probability) {
+			TileIndex tile = *it;
+			TileIndex max_size = RandomRange(_settings_newgame.game_creation.rainfall.lake_island_max_size);
+
+			DEBUG(map, RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL, "Will discard at most %i lake tiles to form a (potential) island near (%i,%i in lake (%i,%i)",
+						max_size, TileX(tile), TileY(tile), TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()));
+			this->DiscardRegion(tile, max_size, lake_tiles, guaranteed_water_tiles, discarded_lake_tiles, true);
+		}
+	}
+}
+
 /** This function prepares a lake for actually being filled with water tiles using MakeRiver.
  *  @param tile an active lake center
  *  @param water_flow the water flow calculated before
@@ -2569,6 +2585,9 @@ void RainfallRiverGenerator::PrepareLake(TileIndex tile, int *water_flow, byte *
 		OnlyGuaranteedLakeModificator only_guaranteed_lake_modificator;
 		only_guaranteed_lake_modificator.ModifyLake(lake, inflow_tile_to_center, guaranteed_water_tiles, discarded_lake_tiles);
 	}
+
+	IslandLakeModificator island_lake_modificator;
+	island_lake_modificator.ModifyLake(lake, inflow_tile_to_center, guaranteed_water_tiles, discarded_lake_tiles);
 
 	/* Terraform all lake tiles to the surface height of the lake and perform some final bookkeeping. */
 	int surface_height = lake->GetSurfaceHeight();
