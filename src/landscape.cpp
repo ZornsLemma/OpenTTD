@@ -1039,6 +1039,14 @@ void GenerateLandscape(byte mode)
 		free(_number_of_lower_tiles);
 		_number_of_lower_tiles = NULL;
 	}
+	if (_water_flow != NULL) {
+		free(_water_flow);
+		_water_flow = NULL;
+	}
+	if (_water_info != NULL) {
+		free(_water_info);
+		_water_info = NULL;
+	}
 
 	CreateRivers();
 }

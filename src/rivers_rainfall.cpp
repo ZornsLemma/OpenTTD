@@ -407,6 +407,240 @@ void NumberOfLowerHeightIterator::ReInit(bool set_map_edge_tiles_to_zero)
 }
 
 /* ================================================================================================================== */
+/* ================================ Flow related functions ========================================================== */
+/* ================================================================================================================== */
+
+/** Given the water information about a tile (which contains the flow direction), this function returns the tile where
+ *  the flow of the tile directs to.
+ *  @param tile some tile
+ *  @param water_info corresponding water information
+ *  @return the tile where the flow ends up, INVALID_TILE if we end up at the map edge
+ */
+TileIndex AddFlowDirectionToTile(TileIndex tile, byte water_info)
+{
+    int water_type = GB(water_info, 3, 3);
+	assert(water_type == WI_NONE || water_type == WI_RIVER || water_type == WI_LAKE);
+	uint direction = GB(water_info, 0, 3);
+	return AddDirectionToTile(tile, (Direction)direction);
+}
+
+TileIndex AddDirectionToTile(TileIndex tile, Direction direction)
+{
+	int x = TileX(tile);
+	int y = TileY(tile);
+
+	switch (direction) {
+		case DIR_N    : return x > 1                  && y > 1                  ? tile + TileDiffXY(-1, -1) : INVALID_TILE;
+		case DIR_NE   : return x > 1                                            ? tile + TileDiffXY(-1,  0) : INVALID_TILE;
+		case DIR_E    : return x > 1                  && y < (int)MapMaxY() - 1 ? tile + TileDiffXY(-1,  1) : INVALID_TILE;
+		case DIR_SE   : return                           y < (int)MapMaxY() - 1 ? tile + TileDiffXY( 0,  1) : INVALID_TILE;
+		case DIR_S    : return x < (int)MapMaxX() - 1 && y < (int)MapMaxY() - 1 ? tile + TileDiffXY( 1,  1) : INVALID_TILE;
+		case DIR_SW   : return x < (int)MapMaxX() - 1                           ? tile + TileDiffXY( 1,  0) : INVALID_TILE;
+		case DIR_W    : return x < (int)MapMaxX() - 1 && y > 1                  ? tile + TileDiffXY( 1, -1) : INVALID_TILE;
+		case DIR_NW   : return                           y > 1                  ? tile + TileDiffXY( 0, -1) : INVALID_TILE;
+		default: return INVALID_TILE; // Impossible default case, as we fetch just three bits above
+	}
+}
+
+/** Returns the direction from the source to the dest tile.
+ *  @param source source tile
+ *  @param dest dest tile
+ *  @return the direction from the source to the dest tile.
+ */
+byte GetWaterInfoDirection(TileIndex source, TileIndex dest)
+{
+	int dx = TileX(dest) - TileX(source);
+	int dy = TileY(dest) - TileY(source);
+
+	if (dx == -1) {
+		if (dy == -1) {
+			return DIR_N;
+		} else if (dy == 0) {
+			return DIR_NE;
+		} else if (dy == 1) {
+			return DIR_E;
+		}
+	} else if (dx == 0) {
+		if (dy == -1) {
+			return DIR_NW;
+		} else if (dy == 1) {
+			return DIR_SE;
+		}
+	} else if (dx == 1) {
+		if (dy == -1) {
+			return DIR_W;
+		} else if (dy == 0) {
+			return DIR_SW;
+		} else if (dy == 1) {
+			return DIR_S;
+		}
+	}
+
+	DEBUG(map, 0, "Illegal direction from (%i, %i) to (%i, %i): (%i, %i)", TileX(source), TileY(source), TileX(dest), TileY(dest), dx, dy);
+	assert(false);
+	return 0;
+}
+
+/* ================================================================================================================== */
+/* ====================================== CalculateFlowIterator ===================================================== */
+/* ================================================================================================================== */
+
+/** Stores all tiles of base_set, that have neighbor tiles with already calculated flow in the given set.
+ *  @param base_set base set
+ *  @param dirty_tiles dirty tiles (out parameter)
+ */
+void CalculateFlowIterator::StoreNeighborTilesOfProcessedTiles(std::set<TileIndex> &base_set, std::set<TileIndex> &dirty_tiles, TileIndex neighbor_tiles[DIR_COUNT])
+{
+	for (std::set<TileIndex>::const_iterator it = base_set.begin(); it != base_set.end(); it++) {
+		TileIndex tile = *it;
+
+		if (this->water_flow[tile] < 0) {  // Maybe condition is unnecessary
+			StoreAllNeighborTiles(tile, neighbor_tiles);
+			for (int z = DIR_BEGIN; z < DIR_END; z++) {
+				TileIndex neighbor_tile = neighbor_tiles[z];
+				if (neighbor_tile != INVALID_TILE && this->water_flow[neighbor_tile] >= 0) {
+					dirty_tiles.insert(tile);
+					break;
+				}
+			}
+		}
+	}
+}
+
+void CalculateFlowIterator::ProcessTile(TileIndex tile, Slope slope)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	/* Don´t calculate flow for non-coast ocean tiles.  Also, which is important as we calculate flow using connected components,
+	 * don´t calculate flow if it is already calculated.
+	 */
+	if ((IsTileType(tile, MP_WATER) && !IsCoastTile(tile)) || this->water_flow[tile] != -1) {
+		return;
+	}
+
+	/* Calculate connected component of tiles of the current height */
+	int ref_height = GetTileZ(tile);
+	std::set<TileIndex> connected_component = std::set<TileIndex>();
+	this->connected_component_calculator->Initialize(ref_height);
+	this->connected_component_calculator->StoreConnectedComponent(connected_component, tile);
+
+	/* Sort them by their number of lower tiles, start with the biggest number of lower tiles (i.e. at the top in terms of landscape) */
+	std::vector<TileWithValue> tiles_with_lower = std::vector<TileWithValue>();
+	for (std::set<TileIndex>::const_iterator it = connected_component.begin(); it != connected_component.end(); it++) {
+		TileIndex curr_tile = *it;
+		tiles_with_lower.push_back(TileWithValue(curr_tile, this->number_of_lower_tiles[curr_tile]));
+	}
+
+	std::sort(tiles_with_lower.begin(), tiles_with_lower.end(), std::greater<TileWithValue>());
+
+	DEBUG(map, RAINFALL_CALCULATE_FLOW_LOG_LEVEL, "Processing connected component near (%i,%i), with height %i, and " PRINTF_SIZE " tiles.",
+				  TileX(tile), TileY(tile), ref_height, tiles_with_lower.size());
+
+	/* ... and iterate over them */
+	for (std::vector<TileWithValue>::const_iterator it = tiles_with_lower.begin(); it != tiles_with_lower.end(); it++) {
+		TileIndex curr_tile = it->tile;
+
+		/* Calculate inflow towards this tile, based on already calculated neighbor tiles */
+		int inflow = 0;
+		StoreAllNeighborTiles(curr_tile, neighbor_tiles);
+		for (int z = 0; z < DIR_COUNT; z++) {
+			TileIndex candidate_inflow_tile = neighbor_tiles[z];
+			if (candidate_inflow_tile != INVALID_TILE && this->water_flow[candidate_inflow_tile] >= 0
+				&& IsNoWater(this->water_info, candidate_inflow_tile)
+				&& AddFlowDirectionToTile(candidate_inflow_tile, this->water_info[candidate_inflow_tile]) == curr_tile) {
+
+				inflow += this->water_flow[candidate_inflow_tile];
+			}
+		}
+
+		/* Precipitation on this tile.  Modify / replace this line of code, to implement more sophisticated
+		 * percipitation schemes (like more rain in mountains, desert vs. rainforest, etc.) */
+		int outflow = inflow + 1;
+
+		DEBUG(map, RAINFALL_CALCULATE_FLOW_LOG_LEVEL, "........ Processing tile (%i,%i), number_of_lower %i, calculated inflow %i and outflow %i",
+					TileX(curr_tile), TileY(curr_tile), it->value, inflow, outflow);
+
+		/* Store the calculated flow */
+		this->water_flow[curr_tile] = outflow;
+
+		/* And finally determine where it flows to. */
+		int lower_tiles_sum = 0;
+		for (int z = DIR_BEGIN; z < DIR_END; z++) {
+			TileIndex candidate_outflow_tile = neighbor_tiles[z];
+
+			/* Important: Only choose tiles with smaller number of lower tiles.  This is the direction where terrain finally descends. */
+			if (candidate_outflow_tile != INVALID_TILE && water_flow[candidate_outflow_tile] == -1 && this->number_of_lower_tiles[candidate_outflow_tile] < this->number_of_lower_tiles[curr_tile]) {
+				int our_z = GetTileZ(curr_tile);
+				int candidate_z = GetTileZ(candidate_outflow_tile);
+
+				if (candidate_z <= our_z) {
+					/* Add one to account for neighbor tiles with zero lower tiles. */
+					lower_tiles_sum += (this->number_of_lower_tiles[candidate_outflow_tile] + 1);
+					DEBUG(map, RAINFALL_CALCULATE_FLOW_LOG_LEVEL, "............ Tile (%i,%i) is a candidate outflow tile", TileX(candidate_outflow_tile), TileY(candidate_outflow_tile));
+				} else {
+					neighbor_tiles[z] = INVALID_TILE;
+				}
+			} else {
+				neighbor_tiles[z] = INVALID_TILE;
+			}
+		}
+
+		if (lower_tiles_sum == 0) {
+			/* No out flow exists. */
+			int x = TileX(curr_tile);
+			int y = TileY(curr_tile);
+			if (x > 1 && y > 1 && x < (int)MapMaxX() - 1 && y < (int)MapMaxY() - 1 && !IsTileType(curr_tile, MP_WATER)) {
+				/* Declare the tile a lake, but only if it is not at the map edge. */
+				DeclareActiveLakeCenter(this->water_info, curr_tile);
+				DEBUG(map, RAINFALL_CALCULATE_FLOW_LOG_LEVEL, "........ No outflow found, declaring tile (%i,%i) a lake", TileX(curr_tile), TileY(curr_tile));
+			} else {
+				/* This means, that a potential river hits the map edge and disappears. */
+				DeclareDisappearTile(this->water_info, curr_tile);
+			}
+		} else {
+			/* Decide where the outflow goes to.  Prefer neighbor tiles with high number of lower tiles, as we want to prefer the
+			 * way down a huge valley over the way into a local depression. */
+			int curr_sum = 0;
+			int r = RandomRange(lower_tiles_sum);
+			for (int z = DIR_BEGIN; z < DIR_END; z++) {
+				TileIndex candidate_outflow_tile = neighbor_tiles[z];
+				if (candidate_outflow_tile != INVALID_TILE) {
+					curr_sum += (this->number_of_lower_tiles[candidate_outflow_tile] + 1);
+					if (r < curr_sum) {
+						/* Calculate direction, and store it in the lower three bits of the water_info */
+						byte direction = GetWaterInfoDirection(curr_tile, candidate_outflow_tile);
+						this->water_info[curr_tile] = direction & 0x07;
+						DEBUG(map, RAINFALL_CALCULATE_FLOW_LOG_LEVEL, "........ Setting water_flow %i in direction %i for tile (%i,%i)",
+											this->water_flow[curr_tile], this->water_info[curr_tile], TileX(curr_tile), TileY(curr_tile));
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
+CalculateFlowIterator::CalculateFlowIterator(HeightIndex *height_index, int *number_of_lower_tiles) : HeightLevelIterator(height_index)
+{
+	this->number_of_lower_tiles = number_of_lower_tiles;
+	this->water_flow = CallocT<int>(MapSizeX() * MapSizeY());
+	this->water_info = CallocT<byte>(MapSizeX() * MapSizeY());
+
+	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
+		this->water_flow[n] = -1;
+		this->water_info[n] = 0;
+	}
+	this->connected_component_calculator = new NumberOfLowerConnectedComponentCalculator(true);
+}
+
+CalculateFlowIterator::~CalculateFlowIterator()
+{
+	free(this->water_flow);
+	free(this->water_info);
+	delete this->connected_component_calculator;
+}
+
+/* ================================================================================================================== */
 /* ================================ RainfallRiverGenerator ========================================================== */
 /* ================================================================================================================== */
 
@@ -484,6 +718,7 @@ void RainfallRiverGenerator::RemoveSmallBasins(int *number_of_lower_tiles)
  *  (1) Calculate a height index, for fast iteration over all tiles of a particular heightlevel.
  *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
  *  (3) Recalculate HeightIndex and NumberOfLowerTiles, as step (2) performed terraforming, and thus invalidated them.
+ *  (4) Calculate flow.  Each tiles gains one unit of flow, while flowing downwards, it sums up.
  */
 void RainfallRiverGenerator::GenerateRivers()
 {
@@ -503,21 +738,49 @@ void RainfallRiverGenerator::GenerateRivers()
 	lower_iterator->ReInit(true);
 	calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
 
+	/* (4) Now, calculate the flow for each tile.  The flow basically is based on a simulated precipitation on each
+	 *     tile (currently, each tile gets one unit of precipitation, but more sophisticated schemes are possible).
+	 *     On the way downwards to the ocean, flow sums up.
+	 */
+	CalculateFlowIterator *flow_iterator = new CalculateFlowIterator(height_index, calculated_number_of_lower_tiles);
+	for (int h = _settings_game.construction.max_heightlevel; h >= 0; h--) {
+		flow_iterator->Calculate(h);
+	}
+	int *water_flow = flow_iterator->GetWaterFlow();
+	byte *water_info = flow_iterator->GetWaterInfo();
+
 	/* Debug code: Store the results of the iterators in a public array, to be able to query them in the LandInfoWindow.
 	 *             Without that possibility, debugging those values would be really hard. */
 	if (_number_of_lower_tiles != NULL) {
 		free(_number_of_lower_tiles);
 		_number_of_lower_tiles = NULL;
 	}
+	if (_water_flow != NULL) {
+		free(_water_flow);
+		_water_flow = NULL;
+	}
+	if (_water_info != NULL) {
+		free(_water_info);
+		_water_info = NULL;
+	}
 
 	_number_of_lower_tiles = CallocT<int>(MapSizeX() * MapSizeY());
 	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
 		_number_of_lower_tiles[n] = calculated_number_of_lower_tiles[n];
+	}
+	_water_flow = CallocT<int>(MapSizeX() * MapSizeY());
+	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
+		_water_flow[n] = water_flow[n];
+	}
+	_water_info = CallocT<byte>(MapSizeX() * MapSizeY());
+	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
+		_water_info[n] = water_info[n];
 	}
 
 	/*** (Debugging code end ***/
 
 	/* Delete iterators last, as the data arrays constructed by them are in use outside them */
 	delete lower_iterator;
+	delete flow_iterator;
 	delete height_index;
 }

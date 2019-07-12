@@ -108,6 +108,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
  */
 
 #define RAINFALL_NUMBER_OF_LOWER_LOG_LEVEL 9
+#define RAINFALL_CALCULATE_FLOW_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -239,6 +240,196 @@ private:
 	 */
 	inline int* GetNumberOfLowerTiles()	{ return this->number_of_lower_tiles; }
 };
+
+/** The kind of water as stored in the water_info array, bits 3 to 5.  The default is no water,
+ *  the other values indicate what the algorithm wants to do with some tile at hand.
+ */
+enum WaterType {
+	/** No water. */
+	WI_NONE = 0,
+
+	/** Water disappearing at the map edge.
+	 */
+	WI_MAP_EDGE_DISAPPEAR = 1,
+
+	/**  Tile having a visible river.
+	 */
+	WI_RIVER       = 2,
+
+	/**  Any non-center tile of a lake.  Generally, it must not be higher than the surface height of the Lake.  If the lake spreads
+     *   over rivers flowing into the lake, they are declard WI_LAKE.
+	 */
+	WI_LAKE        = 3,
+
+	/**  Center tile of a lake.  The tile, where the flow algorithm did not manage to find any tile suitable for an out-flow from this tile.
+	 *   Based on this tile, the lake algorithm will lateron start producing a lake (if there is enough water).
+	 *   NOTE: Thus, the direction of a lake center is undefined.
+	 *   For each Lake object, there is exactly one active lake center.  The flow of the active lake center is the flow of the Lake.
+	 *   If two lakes are merged (because one of them receives enough water to grow till the other one), the lake center of the
+	 *   consumed lake is declared a consumed lake center, only the center of the consuming lake stays active.
+	 */
+	WI_ACTIVE_LAKE_CENTER = 4,
+
+	/**  Center of a Lake that was consumed by another Lake.  Still indicates that at this point, flow cannot flow any further downwards.
+	 *   However, any Lake related calculations that find this tile must delegate to the corresponding active lake center.
+     *   (which is possible as the DefineLakesIterator stores a map from lake centers to Lake instances).
+     */
+	WI_CONSUMED_LAKE_CENTER = 5
+};
+
+/** Returns the kind of water the algorithm intends to generate for some tile.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @return the kind of water the algorithm intends to generate for some tile.
+ *  @see enum WaterType
+ */
+inline WaterType GetWaterType(byte *water_info, TileIndex tile) { return (WaterType)GB(water_info[tile], 3, 3); }
+
+/** Sets the kind of water the algorithm wants to generate at some tile.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @param water_type intended kind of water
+ *  @see enum WaterType
+ */
+inline void SetWaterType(byte *water_info, TileIndex tile, WaterType water_type) { SB(water_info[tile], 3, 3, water_type); }
+
+TileIndex AddFlowDirectionToTile(TileIndex tile, byte water_info);
+byte GetWaterInfoDirection(TileIndex source, TileIndex dest);
+
+/** Returns what the algorithm wants to do with some tile.  This includes kind of water and flow direction; not the flow itself.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @return what the algorithm wants to do with some tile; bits 0..2 direction, 3..5 WaterType
+ */
+inline byte GetWaterInfo(byte *water_info, TileIndex tile) { return water_info[tile]; }
+
+/** Sets the state what the algorithm wants to do with some tile.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @param value bits 0..2 direction, 3..5 WaterType
+ */
+inline void SetWaterInfo(byte *water_info, TileIndex tile, byte value) { water_info[tile] = value; }
+
+/** Declares the given tile an active lake center.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @see WI_ACTIVE_LAKE_CENTER
+ */
+inline void DeclareActiveLakeCenter(byte* water_info, TileIndex tile) { SetWaterType(water_info, tile, WI_ACTIVE_LAKE_CENTER); }
+
+/** Returns wether the given tile is declared an active lake center.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @return wether the given tile is declared an active lake center.
+ *  @see WI_ACTIVE_LAKE_CENTER
+ */
+inline bool IsActiveLakeCenter(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_ACTIVE_LAKE_CENTER; }
+
+/** Declares the given tile a consumed lake center.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @see WI_CONSUMED_LAKE_CENTER
+ */
+inline void DeclareConsumedLakeCenter(byte* water_info, TileIndex tile) { SetWaterType(water_info, tile, WI_CONSUMED_LAKE_CENTER); }
+
+/** Returns wether the given tile is declared a consumed lake center.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @return wether the given tile is declared a consumed lake center.
+ *  @see WI_CONSUMED_LAKE_CENTER
+ */
+inline bool IsConsumedLakeCenter(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_CONSUMED_LAKE_CENTER; }
+
+/** Returns wether the given tile is a lake center (active or consumed).
+ *  @param water_info array
+ *  @param tile some tile
+ *  @return wether the given tile is a lake center (active or consumed).
+ *  @see WI_ACTIVE_LAKE_CENTER, WI_CONSUMED_LAKE_CENTER
+ */
+inline bool IsLakeCenter(byte *water_info, TileIndex tile) { return IsActiveLakeCenter(water_info, tile) || IsConsumedLakeCenter(water_info, tile); }
+
+/** Declares the given tile a non-center tile of a lake.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @see WI_LAKE
+ */
+inline void DeclareOrdinaryLakeTile(byte *water_info, TileIndex tile) { SetWaterType(water_info, tile, WI_LAKE); }
+
+/** Returns wether the given tile is a non-center tile of a lake.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @return wether the given tile is a non-center tile of a lake.
+ *  @see WI_LAKE
+ */
+inline bool IsOrdinaryLakeTile(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_LAKE; }
+
+/** Declares the given tile a tile where flow disappears because the map edge is reached.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @see WI_MAP_EDGE_DISAPPEAR
+ */
+inline void DeclareDisappearTile(byte *water_info, TileIndex tile) { SetWaterType(water_info, tile, WI_MAP_EDGE_DISAPPEAR); }
+
+/** Returns wether the given tile is a tile where flow disappears because the map edge is reached.
+ *  @param water_info array
+ *  @param tile some tile
+ *  @see WI_MAP_EDGE_DISAPPEAR
+ *  @return wether the given tile is a tile where flow disappears because the map edge is reached.
+ */
+inline bool IsDisappearTile(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_MAP_EDGE_DISAPPEAR; }
+
+/** This HeightLevelIterator is responsible for calculating the flow.  Flow is meant to flow from higher towards
+ *  lower tiles, and not in cycles.  Usually, in flow direction flow increases, but later code
+ *  (flow modificators) may break that condition.  Flow calculation relies on the previously calculated
+ *  number of lower tiles, which serves as basis of the following calculation.  By flowing towards tiles
+ *  with a smaller number of lower tiles, flow can find the sea and doesn´t e.g. flow a big flat valley
+ *  upwards.
+ *
+ *  Lateron, flow is used for determining where rivers are (e.g. if more than x flow on a tile), and for determinig
+ *  how much water should be filled into a lake.
+ */
+struct CalculateFlowIterator : public HeightLevelIterator {
+
+private:
+
+	/** Tile-indexed array, for each Tile containing the number of lower tiles as calculated by the NumberOfLowerHeightIterator */
+	int *number_of_lower_tiles;
+
+	/** Tile-indexed array, for each Tile containing the water flow.  Will be calculated by this iterator. */
+	int *water_flow;
+
+	/** Tile-indexed array, for each Tile containing some detail information about the water flow.  One byte is built up as follows:
+	 *    Bits 0..2: Direction of water flow, see enum Direction
+	 *    Bits 3..5: See enum WaterInfo.
+	 */
+	byte *water_info;
+
+	NumberOfLowerConnectedComponentCalculator *connected_component_calculator;
+
+	void StoreNeighborTilesOfProcessedTiles(std::set<TileIndex> &base_set, std::set<TileIndex> &dirty_tiles, TileIndex neighbor_tiles[DIR_COUNT]);
+
+protected:
+
+	virtual void ProcessTile(TileIndex tile, Slope slope);
+
+public:
+
+	CalculateFlowIterator(HeightIndex *height_index, int *number_of_lower_tiles);
+	~CalculateFlowIterator();
+
+	/** Returns the array containing the water flow, indexed by Tiles, as calculated by this Iterator.
+	 *  Note that this array is shared and controlled by this iterator, i.e. do not delete this iterator
+	 *  while still using the fetched array.
+	 */
+	inline int* GetWaterFlow() { return this->water_flow; }
+
+	/** Returns the array containing the additional water flow information, indexed by Tiles, as calculated by this Iterator.
+	 *  Note that this array is shared and controlled by this iterator, i.e. do not delete this iterator
+	 *  while still using the fetched array.
+	 */
+	inline byte* GetWaterInfo() { return this->water_info; }
+};
+
 
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
