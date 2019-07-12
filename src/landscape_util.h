@@ -12,6 +12,9 @@
 #ifndef LANDSCAPE_UTIL_H
 #define LANDSCAPE_UTIL_H
 
+#include "map_func.h"
+#include "slope_type.h"
+
 /** The purpose of a HeightIndex is support for efficient access to all tiles
  *  of a given height.  E.g. a HeightIterator, which offers an interface for
  *  iterating over all tiles of a given height, is backed by a HeightIndex.
@@ -73,6 +76,40 @@ public:
      *  @return the max_height array
      */
 	inline byte** GetMaxHeightArray() { return this->max_height; }
+};
+
+/** A HeightLevelIterator iterates over all Tiles with a specified height, using the index information
+ *  in a given HeightIndex.  See the HeightIndex documentation for more information.
+ *
+ *  Based on the underlying HeightIndex, the iterator can exclude large sections of the map without
+ *  having a detailed look, which makes things much more efficient.
+ *
+ *  The typical usecase is doing something first for all tiles of height 0, then for all tiles of
+ *  height one, and so on...  The "doing something" is subclass-specific, i.e. this is an abstract
+ *  class you should subclass but never instantiate.
+ */
+struct HeightLevelIterator {
+
+private:
+	HeightIndex *height_index;
+
+	void CalculateRecursive(int heightlevel, int depth, int x, int y);
+
+protected:
+
+	virtual void ProcessTile(TileIndex tile, Slope slope) = 0;
+
+	/** Constructs a new HeightLevelIterator based on a given HeightIndex.
+     *  @param height_index the height_index to be used by this iterator
+	 */
+	HeightLevelIterator(HeightIndex *height_index) { this->height_index = height_index; }
+
+public:
+	/** Empty virtual destructor to make the compiler happy.
+	 */
+	virtual ~HeightLevelIterator() {}
+
+	void Calculate(int heightlevel);
 };
 
 #endif /* LANDSCAPE_UTIL_H */

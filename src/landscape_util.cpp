@@ -12,12 +12,16 @@
 #include "stdafx.h"
 #include "debug.h"
 #include "map_func.h"
+#include "slope_func.h"
 #include "tile_map.h"
 #include "core/alloc_func.hpp"
 
 #include "landscape_util.h"
 
 #include "safeguards.h"
+
+/*=================================== HeightIndex functions =======================================*/
+/*=================================================================================================*/
 
 /** Allocates an index array as described in the class comment of HeightIndex.
  *  @return index array as described in the class comment of HeightIndex
@@ -145,3 +149,81 @@ HeightIndex::~HeightIndex()
 	this->FreeHeightArray(this->max_height);
 }
 
+/*================================= HeightIterator functions ======================================*/
+/*=================================================================================================*/
+
+/** This function, called for some index point (x,y) in the height arrays the HeightIndex relies on,
+ *  performs all necessary recursive calls, until at the bottom level of recursion, ProcessTile is
+ *  called for exactly the desired tiles.  For each (x,y) at given depth this function receives, it
+ *  has four candidate (x1,y1), (x2,y2), (x3,y3) and (x4,y4) at the next level of recursion.  It
+ *  checks them using the min_height and max_height bounds stored in the HeightIndex.  The recursive
+ *  call is performed if and only if min_height(xi,yi) <= heightlevel and max_height(xi,yi) >= heightlevel
+ *  according to the HeightIndex.
+ *
+ *  @param heightlevel finally call ProcessTile only for tiles of this heightlevel
+ *  @param depth the log_2 of the grid sections in terms of the HeightIndex, this function in this level
+ *         of recursion operates on
+ *  @param x x coordinate in the HeightIndex at current level of recursion
+ *  @param y y coordinate in the HeightIndex at current level of recursion
+ */
+void HeightLevelIterator::CalculateRecursive(int heightlevel, int depth, int x, int y)
+{
+	if (depth == 0) {
+		/* We ended up at grid level zero.  I.e. from a call with depth == 1, this code is
+		 * called for exactly four Tiles, out of which at least one has the searched
+		 * heightlevel.  Filter for that heightlevel, and if heightlevel match, finally
+	     * call ProcessTile.
+		 */
+		TileIndex tile = TileXY(x, y);
+
+		int tile_height;
+		Slope slope = GetTileSlope(tile, &tile_height);
+
+		/* Only call ProcessTile if the heightlevel fits,
+		 * and additinally ignore the technically existing, but actually invisible tiles shortly outside map */
+		if (heightlevel == tile_height && x > 0 && y > 0 && x < (int)MapMaxX() && y < (int)MapMaxY()) {
+			this->ProcessTile(tile, slope);
+		}
+	} else {
+	    /* Fetch the index arrays using inline getters */
+		byte** min_height_array = this->height_index->GetMinHeightArray();
+		byte** max_height_array = this->height_index->GetMaxHeightArray();
+
+		/* We inspect a quadratic section of 2^depth tiles.  min_height_array and
+		 * max_height_array tell us wether that grid section contains at least one
+		 * tile of the searched heightlevel.  If yes, we make a recursive call,
+		 * if no, we return and never touch that grid section again in this particular
+		 * call to Calculate().
+		 */
+		int row_length = 1 << (MapLogX() - depth);
+		byte min_height = min_height_array[depth][y * row_length + x];
+		byte max_height = max_height_array[depth][y * row_length + x];
+
+		DEBUG(map, 9, "CalculateRecursive: [depth %i][min_height %i][max_height %i][x %i][y %i]",
+						depth, min_height, max_height, x, y);
+
+		if ((byte)heightlevel >= min_height && (byte)heightlevel <= max_height) {
+			this->CalculateRecursive(heightlevel, depth - 1, 2 * x,     2 * y);
+			this->CalculateRecursive(heightlevel, depth - 1, 2 * x + 1, 2 * y);
+			this->CalculateRecursive(heightlevel, depth - 1, 2 * x,     2 * y + 1);
+			this->CalculateRecursive(heightlevel, depth - 1, 2 * x + 1, 2 * y + 1);
+		}
+	}
+}
+
+/** Do the calculations of this iterator, for all Tiles of the given heightlevel.
+ *  To do things as efficient as possible, use the index information in the HeightIndex passed
+ *  to the constructor.
+ *
+ *  @param heightlevel call ProcessTile function only for Tiles with the given heightlevel
+ */
+void HeightLevelIterator::Calculate(int heightlevel)
+{
+	uint min_log = min(MapLogX(), MapLogY());
+	for (int y = 0; y < 1 << (MapLogY() - min_log); y++) {
+		for (int x = 0; x < 1 << (MapLogX() - min_log); x++) {
+			DEBUG(map, 9, "Calling CalculateRecursive for height = %i, min_log = %i, x = %i, y = %i", heightlevel, min_log, x, y);
+			this->CalculateRecursive(heightlevel, min_log, x, y);
+		}
+	}
+}
