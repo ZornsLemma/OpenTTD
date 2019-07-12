@@ -229,6 +229,8 @@ private:
  	NumberOfLowerHeightIterator(HeightIndex *height_index, bool set_map_edge_tiles_to_zero);
 	~NumberOfLowerHeightIterator();
 
+    void ReInit(bool set_map_edge_tiles_to_zero);
+
 	/** Returns the array containing the number of reachable lower tiles, calculated by this iterator.
 	 *  Note that this array is shared and controlled by this iterator, i.e. do not delete this iterator
 	 *  while still using the fetched array.

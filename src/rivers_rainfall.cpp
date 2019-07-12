@@ -17,6 +17,7 @@
 #include "landscape_util.h"
 #include "map_func.h"
 #include "slope_func.h"
+#include "terraform_func.h"
 #include "tile_map.h"
 #include "water_map.h"
 
@@ -383,11 +384,8 @@ void NumberOfLowerHeightIterator::ProcessTile(TileIndex tile, Slope slope)
 
 NumberOfLowerHeightIterator::NumberOfLowerHeightIterator(HeightIndex *height_index, bool set_map_edge_tiles_to_zero) : HeightLevelIterator(height_index)
 {
-	this->set_map_edge_tiles_to_zero = set_map_edge_tiles_to_zero;
 	this->number_of_lower_tiles = CallocT<int>(MapSizeX() * MapSizeY());
-	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
-		this->number_of_lower_tiles[n] = -1;
-	}
+	this->ReInit(set_map_edge_tiles_to_zero);
 
 	this->connected_component_calculator = new NumberOfLowerConnectedComponentCalculator(false);
 }
@@ -396,6 +394,14 @@ NumberOfLowerHeightIterator::~NumberOfLowerHeightIterator()
 {
 	free(this->number_of_lower_tiles);
 	delete this->connected_component_calculator;
+}
+
+void NumberOfLowerHeightIterator::ReInit(bool set_map_edge_tiles_to_zero)
+{
+	this->set_map_edge_tiles_to_zero = set_map_edge_tiles_to_zero;
+	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
+		this->number_of_lower_tiles[n] = -1;
+	}
 }
 
 /* ================================================================================================================== */
@@ -475,6 +481,7 @@ void RainfallRiverGenerator::RemoveSmallBasins(int *number_of_lower_tiles)
 /** The generator function.  The following steps are performed in this order when generating rivers:
  *  (1) Calculate a height index, for fast iteration over all tiles of a particular heightlevel.
  *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
+ *  (3) Recalculate HeightIndex and NumberOfLowerTiles, as step (2) performed terraforming, and thus invalidated them.
  */
 void RainfallRiverGenerator::GenerateRivers()
 {
@@ -485,6 +492,14 @@ void RainfallRiverGenerator::GenerateRivers()
 	/* (2) Remove tiny basins, based on the number-of-lower-tiles measure */
 	int *calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
 	this->RemoveSmallBasins(calculated_number_of_lower_tiles);
+
+	/* (3) Recalculate height index, and number-of-lower-tiles.  The number-of-lower-tiles of a tile is a measure
+     *     for the number of lower tiles one needs to pass to the ocean.  Flow, and later rivers, find the ocean
+	 *     by choosing paths towards low number-of-lower-tiles numbers.
+	 */
+	height_index->Recalculate();
+	lower_iterator->ReInit(true);
+	calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
 
 	/* Debug code: Store the results of the iterators in a public array, to be able to query them in the LandInfoWindow.
 	 *             Without that possibility, debugging those values would be really hard. */
