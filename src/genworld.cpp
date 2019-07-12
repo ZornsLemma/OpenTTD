@@ -133,13 +133,22 @@ static void _GenerateWorld(void *)
 			bool towns_generated = GenerateLandscape(_gw.mode);
 			GenerateClearTile();
 
-			/* only generate towns, tree and industries in newgame mode. */
-			if (_game_mode != GM_EDITOR) {
-				if (!towns_generated && !GenerateTowns(_settings_game.economy.town_layout)) {
-					_cur_company.Restore();
-					HandleGeneratingWorldAbortion();
-					return;
+			/* If the river generator did not yet generate the towns, check wether we should do so here. */
+			if (!towns_generated) {
+				/* Do it except explicitely forbidden (which should only be possible in scenario editor */
+				if (_settings_newgame.game_creation.town_placer != TWP_NONE) {
+					towns_generated = GenerateTowns(_settings_game.economy.town_layout);
 				}
+			}
+			/* If outside scenario editor, and still no towns generated, we have to abort here, as maps without towns make no sense. */
+			if (!towns_generated && _game_mode != GM_EDITOR) {
+				_cur_company.Restore();
+				HandleGeneratingWorldAbortion();
+				return;
+			}
+
+			/* only generate tree and industries in newgame mode. */
+			if (_game_mode != GM_EDITOR) {
 				GenerateIndustries();
 				GenerateObjects();
 				GenerateTrees();

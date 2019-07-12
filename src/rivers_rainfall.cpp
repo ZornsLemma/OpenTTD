@@ -6397,7 +6397,7 @@ bool RainfallRiverGenerator::GenerateRivers()
 	delete this->lake_connected_component_calculator;
 
 	bool towns_generated;
-	if (_game_mode != GM_EDITOR && _settings_newgame.game_creation.town_placer == TWP_RAINFALL) {
+	if (_settings_newgame.game_creation.town_placer == TWP_RAINFALL) {
 		towns_generated = this->GenerateTowns(water_flow, water_info, define_lakes_iterator, max_river_flow);
 	} else {
 		towns_generated = false;

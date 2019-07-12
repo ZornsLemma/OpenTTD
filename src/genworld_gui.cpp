@@ -339,7 +339,8 @@ static const StringID _smoothness[]  = {STR_CONFIG_SETTING_ROUGHNESS_OF_TERRAIN_
 static const StringID _tree_placer[] = {STR_CONFIG_SETTING_TREE_PLACER_NONE, STR_CONFIG_SETTING_TREE_PLACER_ORIGINAL, STR_CONFIG_SETTING_TREE_PLACER_IMPROVED, INVALID_STRING_ID};
 static const StringID _rotation[]    = {STR_CONFIG_SETTING_HEIGHTMAP_ROTATION_COUNTER_CLOCKWISE, STR_CONFIG_SETTING_HEIGHTMAP_ROTATION_CLOCKWISE, INVALID_STRING_ID};
 static const StringID _landscape[]   = {STR_CONFIG_SETTING_LAND_GENERATOR_ORIGINAL, STR_CONFIG_SETTING_LAND_GENERATOR_TERRA_GENESIS, INVALID_STRING_ID};
-static const StringID _town_placer[] = {STR_TOWN_PLACER_ORIGINAL, STR_TOWN_PLACER_RAINFALL, INVALID_STRING_ID};
+static const StringID _town_placer_game[] = {STR_TOWN_PLACER_ORIGINAL, STR_TOWN_PLACER_RAINFALL, INVALID_STRING_ID};
+static const StringID _town_placer_editor[] = {STR_TOWN_PLACER_ORIGINAL, STR_TOWN_PLACER_RAINFALL, STR_TOWN_PLACER_NONE, INVALID_STRING_ID};
 static const StringID _num_towns[]   = {STR_NUM_VERY_LOW, STR_NUM_LOW, STR_NUM_NORMAL, STR_NUM_HIGH, STR_NUM_CUSTOM, INVALID_STRING_ID};
 static const StringID _num_inds[]    = {STR_FUNDING_ONLY, STR_MINIMAL, STR_NUM_VERY_LOW, STR_NUM_LOW, STR_NUM_NORMAL, STR_NUM_HIGH, INVALID_STRING_ID};
 static const StringID _variety[]     = {STR_VARIETY_NONE, STR_VARIETY_VERY_LOW, STR_VARIETY_LOW, STR_VARIETY_MEDIUM, STR_VARIETY_HIGH, STR_VARIETY_VERY_HIGH, INVALID_STRING_ID};
@@ -355,14 +356,23 @@ struct GenerateLandscapeWindow : public Window {
 
 	GenerateLandscapeWindow(WindowDesc *desc, WindowNumber number = 0) : Window(desc)
 	{
+		if (_game_mode != GM_EDITOR && _settings_newgame.game_creation.town_placer == TWP_NONE) {
+			/* Outside editor, option "None" is not available, as games without cities are not possible. */
+			_settings_newgame.game_creation.town_placer = TWP_ORIGINAL;
+		} else if (_game_mode == GM_EDITOR) {
+			/* Default value in scenario editor: Create no towns.  But allow do override that, if players want to
+		     * use the generator to produce a default configuration of towns they might improve manually.
+		     */
+			_settings_newgame.game_creation.town_placer = TWP_NONE;
+		}
+
 		this->InitNested(number);
 
 		this->LowerWidget(_settings_newgame.game_creation.landscape + WID_GL_TEMPERATE);
 
 		this->mode = (GenerateLandscapeWindowMode)this->window_number;
 
-		/* Disable town, industry and trees in SE */
-		this->SetWidgetDisabledState(WID_GL_TOWN_AMOUNT_PULLDOWN, _game_mode == GM_EDITOR);
+		/* Disable industry and trees in SE */
 		this->SetWidgetDisabledState(WID_GL_INDUSTRY_PULLDOWN, _game_mode == GM_EDITOR);
 		this->SetWidgetDisabledState(WID_GL_TREE_PULLDOWN,     _game_mode == GM_EDITOR);
 
@@ -379,11 +389,15 @@ struct GenerateLandscapeWindow : public Window {
 			case WID_GL_MAX_HEIGHTLEVEL_TEXT: SetDParam(0, _settings_newgame.construction.max_heightlevel); break;
 			case WID_GL_SNOW_LEVEL_TEXT:      SetDParam(0, _settings_newgame.game_creation.snow_line_height); break;
 
-			case WID_GL_TOWN_PLACER_PULLDOWN: SetDParam(0, _town_placer[_settings_newgame.game_creation.town_placer]); break;
-			case WID_GL_TOWN_AMOUNT_PULLDOWN:
+			case WID_GL_TOWN_PLACER_PULLDOWN:
 				if (_game_mode == GM_EDITOR) {
-					SetDParam(0, STR_CONFIG_SETTING_OFF);
-				} else if (_settings_newgame.difficulty.number_towns == CUSTOM_TOWN_NUMBER_DIFFICULTY) {
+					SetDParam(0, _town_placer_editor[_settings_newgame.game_creation.town_placer]);
+				} else {
+					SetDParam(0, _town_placer_game[_settings_newgame.game_creation.town_placer]);
+				}
+				break;
+			case WID_GL_TOWN_AMOUNT_PULLDOWN:
+				if (_settings_newgame.difficulty.number_towns == CUSTOM_TOWN_NUMBER_DIFFICULTY) {
 					SetDParam(0, STR_NUM_CUSTOM_NUMBER);
 					SetDParam(1, _settings_newgame.game_creation.custom_town_number);
 				} else {
@@ -473,7 +487,7 @@ struct GenerateLandscapeWindow : public Window {
 		this->SetWidgetDisabledState(WID_GL_SNOW_LEVEL_UP,   _settings_newgame.game_creation.snow_line_height >= MAX_SNOWLINE_HEIGHT || _settings_newgame.game_creation.landscape != LT_ARCTIC);
 
 		/* The original town placer doesn´t offer expert options */
-		this->SetWidgetDisabledState(WID_GL_TOWN_PLACER_EXPERT_SETTINGS, _settings_newgame.game_creation.town_placer == TWP_ORIGINAL);
+		this->SetWidgetDisabledState(WID_GL_TOWN_PLACER_EXPERT_SETTINGS, _settings_newgame.game_creation.town_placer != TWP_RAINFALL);
 
 		/* The original river generator doesn´t offer expert options */
 		this->SetWidgetDisabledState(WID_GL_RIVER_EXPERT_SETTINGS_BUTTON, _settings_newgame.game_creation.river_generator == RG_ORIGINAL);
@@ -517,7 +531,12 @@ struct GenerateLandscapeWindow : public Window {
 				*size = maxdim(*size, GetStringBoundingBox(STR_MAPGEN_HEIGHTMAP_SIZE));
 				break;
 
-			case WID_GL_TOWN_PLACER_PULLDOWN: strs = _town_placer; break;
+			case WID_GL_TOWN_PLACER_PULLDOWN:
+				if (_game_mode == GM_EDITOR) {
+					strs = _town_placer_editor;
+				} else {
+					strs = _town_placer_game;
+				}
 			case WID_GL_TOWN_AMOUNT_PULLDOWN:
 				strs = _num_towns;
 				SetDParamMaxValue(0, CUSTOM_TOWN_MAX_NUMBER);
@@ -595,7 +614,7 @@ struct GenerateLandscapeWindow : public Window {
 				break;
 
 			case WID_GL_TOWN_PLACER_PULLDOWN: // Town placer
-				ShowDropDownMenu(this, _town_placer, _settings_newgame.game_creation.town_placer, WID_GL_TOWN_PLACER_PULLDOWN, 0, 0);
+				ShowDropDownMenu(this, _game_mode == GM_EDITOR ? _town_placer_editor : _town_placer_game, _settings_newgame.game_creation.town_placer, WID_GL_TOWN_PLACER_PULLDOWN, 0, 0);
 				break;
 
 			case WID_GL_TOWN_AMOUNT_PULLDOWN: // Number of towns
@@ -833,7 +852,7 @@ struct GenerateLandscapeWindow : public Window {
 			case WID_GL_TOWN_PLACER_PULLDOWN:
 				_settings_newgame.game_creation.town_placer = index;
 				/* If the original river generator is selected, don´t allow selecting the rainfall town placer, it would be senseless. */
-				if (_settings_newgame.game_creation.town_placer == TWP_RAINFALL && _settings_newgame.game_creation.river_generator == RG_ORIGINAL) {
+				if (_settings_newgame.game_creation.town_placer == TWP_RAINFALL && _settings_newgame.game_creation.river_generator != RG_RAINFALL) {
 					_settings_newgame.game_creation.town_placer = TWP_ORIGINAL;
 				}
 				break;

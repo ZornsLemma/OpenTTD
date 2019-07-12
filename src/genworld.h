@@ -136,6 +136,7 @@ enum TownPlacerEnum {
 	 * Otherwise you will get inconsistent behaviour. */
 	TWP_ORIGINAL     = 0,  ///< The original town placer
 	TWP_RAINFALL     = 1,  ///< Place towns based on data calculated by the Rainfall River Generator
+	TWP_NONE         = 2,  ///< Place no towns, only available in the scenario editor
 };
 
 /* Just a small base class for RiverGenerators. */

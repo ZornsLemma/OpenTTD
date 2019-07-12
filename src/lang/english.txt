@@ -1091,6 +1091,7 @@ STR_RIVERS_RIVER_INFO                                           :{BLACK} River {
 
 STR_TOWN_PLACER_ORIGINAL                                        :Original
 STR_TOWN_PLACER_RAINFALL                                        :Rainfall
+STR_TOWN_PLACER_NONE                                            :No towns
 
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced
