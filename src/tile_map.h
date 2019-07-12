@@ -258,6 +258,7 @@ static inline void SetAnimationFrame(TileIndex t, byte frame)
 	_me[t].m7 = frame;
 }
 
+Slope GetTileSlopeGivenHeight(int hnorth, int hwest, int heast, int hsouth, int *h);
 Slope GetTileSlope(TileIndex tile, int *h = NULL);
 int GetTileZ(TileIndex tile);
 int GetTileMaxZ(TileIndex tile);
