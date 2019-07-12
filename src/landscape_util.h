@@ -156,6 +156,7 @@ void StoreSlopes(TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_
 void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[DIR_COUNT]);
 
 Direction GetDirection(TileIndex source_tile, TileIndex dest_tile);
+Direction GetLowerDirectionForInclinedSlope(Slope inclined_slope);
 
 int GetAngleFromDirection(Direction direction);
 Direction GetDirectionFromAngle(int angle);

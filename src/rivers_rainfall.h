@@ -123,6 +123,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL 9
 #define RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL 9
 #define RAINFALL_MOVE_WATER_LOG_LEVEL 9
+#define RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -1059,6 +1060,33 @@ struct TerraformingAction {
     }
 };
 
+/** ConnectedComponentCalculator for finding all river tiles in a configurable height interval.
+ */
+struct RiverHeightConnectedComponentCalculator : public ConnectedComponentCalculator<std::set<TileIndex> > {
+
+private:
+	int min_height;     	///< Minimum GetTileZ this ConnectedComponentCalculator recognizes
+	bool min_raised;        ///< If true, tiles at minimum GetTileZ will only be recognized if they are not SLOPE_FLAT
+	int max_height;         ///< Maximum GetTileZ this ConnectedComponentCalculator recognizes
+	bool max_raised;        ///< If false, tiles at maximum GetTileZ will only be recognized if they are SLOPE_FLAT
+	byte *water_info;
+
+protected:
+	virtual bool RecognizeTile(std::set<TileIndex> &tiles, TileIndex tile, TileIndex prev_tile);
+	inline virtual void StoreInContainer(std::set<TileIndex> &tiles, TileIndex tile) { tiles.insert(tile); }
+
+public:
+	RiverHeightConnectedComponentCalculator(byte *water_info) : ConnectedComponentCalculator(false) { this->water_info = water_info; }
+	void ReInit(int height) { this->ReInit(height, false, height, true); }
+	void ReInit(int min_height, bool min_raised, int max_height, bool max_raised)
+	{
+		this->min_height = min_height;
+		this->min_raised = min_raised;
+        this->max_height = max_height;
+        this->max_raised = max_raised;
+	}
+};
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,
@@ -1107,6 +1135,9 @@ private:
 	void UpdateFlow(int *water_flow, std::vector<TileWithHeightAndFlow> &water_tiles);
 	void GetProblemTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::set<TileIndex> &problem_tiles, byte *water_info);
 
+	bool AreAnyWaterTilesAffected(TerraformerState &terraformer_state, byte *water_info);
+	bool AreAffectedTilesSuitableForWater(TerraformerState &terraformer_state, byte *water_info, std::set<TileIndex>* affected_tiles = NULL, int max_affected_lake_tiles = -1);
+
 	void ModifyFlow(int *water_flow, byte *water_info);
 
 	std::vector<int> wide_river_bounds;
@@ -1141,6 +1172,14 @@ private:
 										  Direction straight_direction_one, Direction straight_direction_two, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator,
 										  std::set<TileIndex> &tiles_fixed, std::set<TileIndex> &new_problem_tiles);
 	bool AreTilesLinkedByRiver(TileIndex tile, TileIndex water_neighbor_tiles[DIR_COUNT], Direction direction_one, Direction direction_two, byte *water_info, int limit);
+
+	bool IsWaterTileForFixingBadRiverSlopes(TileIndex tile, byte *water_info);
+	bool IsBadInclinedRiverSlope(TileIndex tile, byte *water_info, TileIndex neighbor_tiles[DIR_COUNT]);
+	int GetNumberOfWaterNeighborGaps(bool water_neighbors[DIR_COUNT]);
+	bool FixBadRiverSlopeByOtherFlatRiver(TileIndex base_tile, TileIndex tile, int desired_height, int *water_flow, byte *water_info, bool tile_river);
+	bool TryCompleteTerraformingByLoweringTiles(TerraformerState &terraformer_state, byte* water_info, TileIndex neighbor_tiles[DIR_COUNT], std::set<TileIndex> &affected_tiles);
+	void RegisterPossibleNewBadInclinedTiles(std::set<TileIndex> &affected_tiles, std::set<TileIndex> &next_problem_tiles, TileIndex neighbor_tiles[DIR_COUNT], byte *water_info);
+	void FixBadRiverSlopes(int *water_flow, byte *water_info);
 
 	bool IsIsolatedCorner(TileIndex neighbor_tiles[DIR_COUNT], Direction corner_direction, Direction adjacent_direction_one, Direction adjacent_direction_two);
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);

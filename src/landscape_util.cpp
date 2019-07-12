@@ -353,6 +353,23 @@ Direction GetDirection(TileIndex source_tile, TileIndex dest_tile)
 	return DIR_W;
 }
 
+/** Given an inclined slope, this function returns the direction where the lower tile is located (relative to the given tile).
+ *  @param inclined_slope any inclined slope
+ *  @return direction towards the lower tile
+ */
+Direction GetLowerDirectionForInclinedSlope(Slope inclined_slope)
+{
+	switch(inclined_slope) {
+		case SLOPE_NW: return DIR_SE;
+		case SLOPE_NE: return DIR_SW;
+		case SLOPE_SW: return DIR_NE;
+		case SLOPE_SE: return DIR_NW;
+		default: assert(false);
+				 /* Should never be reached.  But avoid the compiler warning. */
+				 return DIR_SW;
+	}
+}
+
 /*================================ Angles <--> DirectionIndices ===================================*/
 /*=================================================================================================*/
 

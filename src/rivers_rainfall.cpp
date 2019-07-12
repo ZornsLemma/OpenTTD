@@ -2263,6 +2263,88 @@ void RainfallRiverGenerator::GetProblemTiles(std::vector<TileWithHeightAndFlow> 
 	}
 }
 
+/** Returns wether the given TerraformerState affects any tiles planned to become water, or being ocean.
+ *  Affected means that it would change their GetTileZ or slope.
+ *  @param terraformer_state any TerraformerState, usually SimulateTerraformTileToSlope was performed on it before
+ *  @param water_info the water info array
+ *  @return wether the given TerraformerState affects any tiles planned to become water
+ */
+bool RainfallRiverGenerator::AreAnyWaterTilesAffected(TerraformerState &terraformer_state, byte *water_info)
+{
+	std::set<TileIndex> affected_tiles = std::set<TileIndex>();
+	this->RegisterTilesAffectedByTerraforming(terraformer_state, affected_tiles, water_info, 0, false);
+	for (std::set<TileIndex>::const_iterator it = affected_tiles.begin(); it != affected_tiles.end(); it++)
+	{
+		TileIndex affected_tile = *it;
+		if (IsRiver(water_info, affected_tile) || IsOrdinaryLakeTile(water_info, affected_tile) || IsLakeCenter(water_info, affected_tile) || IsTileType(affected_tile, MP_WATER)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/** Returns wether all tiles affected by the given TerraformerState, that are planned to become water, are suitable for water.
+ *  Optionally, a set of affected_tiles that will be filled as an OUT parameter, and a maximum number of lake tiles that may be
+ *  affected regardless of their slope can be passed.
+ *  Affected means that it would change their GetTileZ or slope.
+ *  @param terraformer_state any TerraformerState, usually SimulateTerraformTileToSlope was performed on it before
+ *  @param water_info the water info array
+ *  @param affected_tiles pointer to a affected_tiles set.  If not NULL, the set of affected tiles determined by this function will
+ *         be inserted.  May be NULL.
+ *  @param max_affected_tiles maximum number of lake tiles that may be affected by the terraforming, even if their planned slope is valid
+ *  @return wether terraforming is ok according to the description above
+ */
+bool RainfallRiverGenerator::AreAffectedTilesSuitableForWater(TerraformerState &terraformer_state, byte *water_info, std::set<TileIndex>* affected_tiles, int max_affected_lake_tiles)
+{
+	/* Create set if not passed from outside */
+	bool local_affected_tiles = (affected_tiles == NULL);
+	if (local_affected_tiles) {
+		affected_tiles = new std::set<TileIndex>();
+	}
+
+	/* Number of affected lake tiles seen so far */
+	int affected_lake_tiles = 0;
+
+	/* Determine which tiles are affected */
+	this->RegisterTilesAffectedByTerraforming(terraformer_state, *affected_tiles, water_info, 0);
+
+	/* And iterate over them */
+	for (std::set<TileIndex>::const_iterator it = affected_tiles->begin(); it != affected_tiles->end(); it++)
+	{
+		TileIndex affected_tile = *it;
+		if (max_affected_lake_tiles >= 0) {
+			/* Bookkeeping */
+			if (IsOrdinaryLakeTile(water_info, affected_tile) || IsLakeCenter(water_info, affected_tile)) {
+				affected_lake_tiles++;
+			}
+
+			/* Terraforming affects too many lake tiles, and is thus forbidden */
+			if (affected_lake_tiles > max_affected_lake_tiles) {
+				if (local_affected_tiles) {
+					delete affected_tiles;
+				}
+				return false;
+			}
+		}
+		if (IsRiver(water_info, affected_tile) || IsOrdinaryLakeTile(water_info, affected_tile) || IsLakeCenter(water_info, affected_tile)) {
+			Slope slope = terraformer_state.GetPlannedSlope(affected_tile);
+			if (slope != SLOPE_FLAT && !IsInclinedSlope(slope)) {
+				/* Invalid slope, report false */
+				if (local_affected_tiles) {
+					delete affected_tiles;
+				}
+				return false;
+			}
+		}
+	}
+
+	/* All checks ok, the terraforming is ok */
+	if (local_affected_tiles) {
+		delete affected_tiles;
+	}
+	return true;
+}
+
 /* ========================================================= */
 /* ================ Flow modification ====================== */
 /* ========================================================= */
@@ -3955,6 +4037,480 @@ bool RainfallRiverGenerator::AreTilesLinkedByRiver(TileIndex tile, TileIndex wat
 }
 
 /* ========================================================= */
+/* ======= Fix inclined river slopes leading nowhere ======= */
+/* ========================================================= */
+
+/** Returns wether the tile is a (planned) river/water tile in the sense of fixing bad inclined slopes.
+ *  I.e., it is river/lake, or ocean.  The latter is detected using height and slope, not via MP_WATER,
+ *  as the latter suffers from the at this point missing tile loop.
+ */
+bool RainfallRiverGenerator::IsWaterTileForFixingBadRiverSlopes(TileIndex tile, byte *water_info)
+{
+
+	if (tile != INVALID_TILE) {
+		if (WasProcessed(water_info, tile)) {
+			return true;
+		} else {
+			/* Detect ocean via its height & slope, as due to the tile loop, not all ocean tiles actually are ocean at this point. */
+			int height;
+			Slope slope = GetTileSlope(tile, &height);
+			return height == 0 && slope == SLOPE_FLAT;
+		}
+	} else {
+		return false;
+	}
+}
+
+/** Returns wether the given tile is (to be exact: may be) a bad inclined river slope, i.e. has no direct upper / lower river neighbor.
+ *  E.g. the source of a river of course has no upper neighbor, and is ok nevertheless.  Such cases are tested outside this function.
+ */
+bool RainfallRiverGenerator::IsBadInclinedRiverSlope(TileIndex tile, byte *water_info, TileIndex neighbor_tiles[DIR_COUNT])
+{
+	Slope slope = GetTileSlope(tile);
+	if (IsInclinedSlope(slope)) {
+		StoreAllNeighborTiles(tile, neighbor_tiles);
+		Direction lower_direction = GetLowerDirectionForInclinedSlope(slope);
+		Direction upper_direction = GetOppositeDirection(lower_direction);
+		bool lower_water = this->IsWaterTileForFixingBadRiverSlopes(neighbor_tiles[lower_direction], water_info);
+		bool upper_water = this->IsWaterTileForFixingBadRiverSlopes(neighbor_tiles[upper_direction], water_info);
+		return !lower_water || !upper_water;
+	} else {
+		return false;
+	}
+}
+
+/** Returns the number of gaps in the given series of water neighbors.
+ *  A gap is a continuous and not expandable series of non-water tiles in the given
+ *  water neighbors array.
+ */
+int RainfallRiverGenerator::GetNumberOfWaterNeighborGaps(bool water_neighbors[DIR_COUNT])
+{
+	int number_of_gaps = 0;
+	bool in_water = false;
+	bool starts_with_water = water_neighbors[0];
+	for (int n = 0; n < DIR_COUNT; n++) {
+		if (water_neighbors[n]) {
+			/* Start a series of water tiles */
+			if (!in_water) {
+				in_water = true;
+			}
+		} else {
+			/* Finish a set of water tiles, and record a gap */
+			if (in_water) {
+				in_water = false;
+				number_of_gaps++;
+			}
+		}
+	}
+
+	/* The jump from the last to the first index of the array */
+	if (in_water && !starts_with_water) {
+		number_of_gaps++;
+	}
+	return number_of_gaps;
+}
+
+bool RiverHeightConnectedComponentCalculator::RecognizeTile(std::set<TileIndex> &tiles, TileIndex tile, TileIndex prev_tile)
+{
+	if (tiles.find(tile) == tiles.end() && WasProcessed(this->water_info, tile)) {
+		/* Tile not yet seen, and a river/lake tile. */
+
+		int height;
+		Slope slope = GetTileSlope(tile, &height);
+
+		int detail_height = 2 * height + (slope == SLOPE_FLAT ? 0 : 1);
+		int min_detail_height = 2 * this->min_height + (this->min_raised ? 1 : 0);
+		int max_detail_height = 2 * this->max_height + (this->max_raised ? 1 : 0);
+
+		if (detail_height < min_detail_height || detail_height > max_detail_height) {
+			return false;
+		} else if (slope != SLOPE_FLAT) {
+			if (detail_height == min_detail_height || detail_height == max_detail_height) {
+				int x = TileX(tile);
+				int y = TileY(tile);
+				int prev_x = TileX(prev_tile);
+				int prev_y = TileY(prev_tile);
+				Slope prev_slope = GetTileSlope(prev_tile);
+
+				if (detail_height == min_detail_height) {
+					/* Opposite slopes mean that we step through a tiny valley.  This splits up our connected component, thus we need to stop in that case. */
+					return !(    (x == prev_x + 1 && slope == SLOPE_SW && prev_slope == SLOPE_NE)
+							  || (x == prev_x - 1 && slope == SLOPE_NE && prev_slope == SLOPE_SW)
+							  || (y == prev_y + 1 && slope == SLOPE_SE && prev_slope == SLOPE_NW)
+							  || (y == prev_y - 1 && slope == SLOPE_NW && prev_slope == SLOPE_SE));
+				} else {
+					/* Opposite slopes mean that we step over a small mountain.  This splits up our connected component, thus we need to stop in that case. */
+					return !(    (x == prev_x + 1 && slope == SLOPE_NE && prev_slope == SLOPE_SW)
+							  || (x == prev_x - 1 && slope == SLOPE_SW && prev_slope == SLOPE_NE)
+							  || (y == prev_y + 1 && slope == SLOPE_NW && prev_slope == SLOPE_SE)
+							  || (y == prev_y - 1 && slope == SLOPE_SE && prev_slope == SLOPE_NW));
+				}
+			} else {
+				return true;
+			}
+		} else {
+			return true;
+		}
+	} else {
+		return false;
+	}
+}
+
+/** Fixes the bad river slope of some base tile by making another tile a flat river tile.  Does not care
+ *  wether this keeps rivers connected, i.e. checking this is the responsibility of the caller.
+ *  If necessary, this function tries to perform terraforming to make that tile flat.  If that terraforming
+ *  would affect any tiles planned to become river, the function does not do anything.
+ *  In the success case, the base tile is declared to be no river.
+ *  @param base_tile the tile with the problematic slope
+ *  @param tile the tile we want to make flat river in order to fix the situation
+ *  @param desired_height height to (try to) terraform that tile to
+ *  @param water_flow the water flow array
+ *  @param water_info the water info array
+ *  @param tile_river wether the tile is aready a river tile
+ *  @return wether the tile could be made a flat river tile
+ */
+bool RainfallRiverGenerator::FixBadRiverSlopeByOtherFlatRiver(TileIndex base_tile, TileIndex tile, int desired_height, int *water_flow, byte *water_info, bool tile_river)
+
+{
+	if (tile_river) {
+		/* Already river, simply declare the base tile no river */
+		MarkNotProcessed(water_info, base_tile);
+		DeclareNoWater(water_info, base_tile);
+		return true;
+	}
+
+	bool flat_slope = GetTileSlope(tile) == SLOPE_FLAT;
+	if (flat_slope) {
+		/* No terraforming needed */
+		MarkProcessed(water_info, tile);
+		DeclareRiver(water_info, tile);
+		MarkNotProcessed(water_info, base_tile);
+		DeclareNoWater(water_info, base_tile);
+		water_flow[tile] = water_flow[base_tile];
+		return true;
+	} else {
+		/* Terraforming needed, check wether it is possible without affecting water tiles */
+		TerraformerState terraformer_state;
+		if (SimulateTerraformTileToSlope(tile, desired_height, SLOPE_FLAT, terraformer_state) && !AreAnyWaterTilesAffected(terraformer_state, water_info)) {
+			ExecuteTerraforming(terraformer_state);
+
+			MarkProcessed(water_info, tile);
+			DeclareRiver(water_info, tile);
+			MarkNotProcessed(water_info, base_tile);
+			DeclareNoWater(water_info, base_tile);
+			water_flow[tile] = water_flow[base_tile];
+			return true;
+		} else {
+			/* Not possible, do nothing */
+			return false;
+		}
+	}
+}
+
+/** Given a terraformer state containing a started terraforming operation (i.e. some tiles lowered or raised), this function tries to
+ *  complete the terraforming (by *only* lowering tiles) such that all affected river tiles are valid to become river.
+ *  This function will lower any number of river tiles if necessary, but will only touch a very limited number of lake tiles, in order
+ *  to avoid demolishing lakes in the large scale.
+ *  @param terraformer_state terraformer state with started terraforming
+ *  @param water_info the water info array
+ *  @param neighbor_tiles neighbor tiles array, used for querying the neighbors of some tile, may be altered by the function
+ *  @param affected_tiles out-parameter, initially assumed to be empty, will afterwards contain the set of river tiles affected by
+ *                        the terraforming.  I.e. the caller can do some postprocessing work on the affected tiles.
+ *  @return wether the terraforming could be completed successfully.
+ */
+bool RainfallRiverGenerator::TryCompleteTerraformingByLoweringTiles(TerraformerState &terraformer_state, byte* water_info, TileIndex neighbor_tiles[DIR_COUNT], std::set<TileIndex> &affected_tiles)
+{
+	bool success = true;                                          // Was the terraforming simulated so far successful?
+
+	bool progress = false;                                        // Did we make progress in the last iteration (in terms of successfully terraforming further tiles)
+	int number_of_additional_tiles = 0;                           // Number of tiles lowered by this function so far
+	bool all_suitable = false;                                    // True if and only if all affected river tiles are suitable for river
+	const int LAKE_LIMIT = 10;                                    // We will lower not more than this number of lake tiles
+	int number_of_terraformed_lake_tiles = 0;                     // The number of lake tiles lowered so far
+
+	/* Continue terraforming as long as it is successful (most probably yes) and progress can be made, i.e. more tiles can be lowered */
+	do {
+		/* Check current situation, the affected tiles are treated as an out parameter */
+		all_suitable = this->AreAffectedTilesSuitableForWater(terraformer_state, water_info, &affected_tiles, LAKE_LIMIT);
+		if (all_suitable) {
+			/* All tiles valid, jump to post processing after the iteration */
+			break;
+		} else {
+			/* Iterate over the affected river tiles, and lower them if necessary */
+			progress = false;
+			for (std::set<TileIndex>::const_iterator affected_it = affected_tiles.begin(); success && affected_it != affected_tiles.end(); affected_it++) {
+				TileIndex affected_tile = *affected_it;
+				if (WasProcessed(water_info, affected_tile) && !IsValidSlopeForRiver(terraformer_state.GetPlannedSlope(affected_tile))) {
+					/* Extra bookkeeping for lake tiles, to avoid demolishing lakes in the large scale */
+					if (IsOrdinaryLakeTile(water_info, affected_tile) || IsLakeCenter(water_info, affected_tile)) {
+						if (number_of_terraformed_lake_tiles >= LAKE_LIMIT) {
+							success = false;
+							break;
+						} else {
+							number_of_terraformed_lake_tiles++;
+						}
+					}
+
+					DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "................ Lowering additional tile (%i,%i), current height %i, slope %s",
+									TileX(affected_tile), TileY(affected_tile), terraformer_state.GetTileZ(affected_tile), SlopeToString(terraformer_state.GetPlannedSlope(affected_tile)));
+
+					/* Add lowering the tile at hand to the current terraformer state */
+					success &= SimulateTerraformTileToSlope(affected_tile, terraformer_state.GetTileZ(affected_tile), SLOPE_FLAT, terraformer_state);
+					number_of_additional_tiles++;
+					progress = true;
+				}
+			}
+		}
+	} while (progress && success);
+
+	if (success && all_suitable) {
+		/* Terraforming was successful, all affected tiles are valid for river */
+
+		DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "................ Fixing bad inclined slope; lowering %i additional tiles was necessary, %i lake tiles are affected.",
+						number_of_additional_tiles, number_of_terraformed_lake_tiles);
+
+		/* Thus execute the terraforming */
+		ExecuteTerraforming(terraformer_state);
+		return true;
+	} else {
+		return false;
+	}
+}
+
+void RainfallRiverGenerator::RegisterPossibleNewBadInclinedTiles(std::set<TileIndex> &affected_tiles, std::set<TileIndex> &next_problem_tiles, TileIndex neighbor_tiles[DIR_COUNT], byte *water_info)
+{
+	/* ... and register possible newly introduced bad inclined tiles */
+	for (std::set<TileIndex>::const_iterator affected_it = affected_tiles.begin(); affected_it != affected_tiles.end(); affected_it++) {
+		TileIndex affected_tile = *affected_it;
+		if (WasProcessed(water_info, affected_tile) && this->IsBadInclinedRiverSlope(affected_tile, water_info, neighbor_tiles)) {
+			DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "................. As a consequence, registering (%i,%i) as new bad river tile", TileX(affected_tile), TileY(affected_tile));
+			next_problem_tiles.insert(affected_tile);
+		}
+	}
+}
+
+/** This function tries to fix river slopes that are valid in a technical sense, but considered bad.
+ *  I.e. because they are inclined, and either have no upper river neighbor tile, or no lower river
+ *  neighbor tile.
+ *  In an iteration, different strategies to fix such tiles are tried.  In the end, most of these
+ *  problem tiles should be fixed, but a few will probably persist.  E.g., on a 1024x1024 map,
+ *  out of initial 5000 problem tiles, 20 might persist.
+ */
+void RainfallRiverGenerator::FixBadRiverSlopes(int *water_flow, byte *water_info)
+{
+	RiverHeightConnectedComponentCalculator *connected_component_calculator = new RiverHeightConnectedComponentCalculator(water_info);
+
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	/* For each Direction with respect to the tile at hand, the flag is true if and only if the corresponding neighbor tile is planned to become river/lake, or is ocean. */
+	bool water_neighbor[DIR_COUNT] = { false, false, false, false, false, false, false, false };
+
+	/* Scan map for bad inclined river tiles */
+	std::set<TileIndex> problem_tiles = std::set<TileIndex>();
+	for (TileIndex tile = 0; tile < MapSize(); tile++) {
+		if (WasProcessed(water_info, tile) && IsBadInclinedRiverSlope(tile, water_info, neighbor_tiles)) {
+			problem_tiles.insert(tile);
+		}
+	}
+
+	int iteration = 0;
+	bool progress = true;
+
+	/* Wether the iteration below may raise river tiles. */
+	bool raising_forbidden = false;
+
+	while (progress) {
+		iteration++;
+		DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "Fixing bad inclined river tiles: Starting iteration %i with " PRINTF_SIZE " tiles", iteration, problem_tiles.size());
+
+		std::set<TileIndex> next_problem_tiles = std::set<TileIndex>();
+		for (std::set<TileIndex>::const_iterator it = problem_tiles.begin(); it != problem_tiles.end(); it++) {
+			TileIndex tile = *it;
+			int height;
+			Slope slope = GetTileSlope(tile, &height);
+
+			/* Tile might have been lowered to become flat as a (quite positive) side effect of fixing another one in a previous iteration, */
+			if (slope == SLOPE_FLAT) {
+				continue;
+			}
+
+			/* Tile was affected by other terraformings, a very very seldom case (e.g. one tile per 1024x1024 map). */
+			if (!IsInclinedSlope(slope)) {
+				continue;
+			}
+
+			DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, ".... Evaluating tile (%i,%i)", TileX(tile), TileY(tile));
+
+			/* Inclined slopes exist in four different fashions (NW, NE, SW, SE).  But in terms of the way we need to think here, they
+			 * are all symmetric: An inclined slope has an upper neighbor tile, a lower neighbor tile, two side neighbor tiles, and so on.
+			 * Thus, we below determine which direction is "lower", "upper" etc. for our particular slope, and then do the work based
+			 * on those directions.
+			 */
+			StoreAllNeighborTiles(tile, neighbor_tiles);
+			for (int n = DIR_BEGIN; n < DIR_END; n++) {
+				water_neighbor[n] = this->IsWaterTileForFixingBadRiverSlopes(neighbor_tiles[n], water_info);
+			}
+
+			Direction lower_direction = GetLowerDirectionForInclinedSlope(slope);
+			Direction diagonal_lower_direction_one = GetPrevDirection(lower_direction);
+			Direction diagonal_lower_direction_two = GetNextDirection(lower_direction);
+			Direction side_direction_one = GetPrevDirection(diagonal_lower_direction_one);
+			Direction side_direction_two = GetNextDirection(diagonal_lower_direction_two);
+			Direction diagonal_upper_direction_one = GetPrevDirection(side_direction_one);
+			Direction diagonal_upper_direction_two = GetNextDirection(side_direction_two);
+			Direction upper_direction = GetPrevDirection(diagonal_upper_direction_one);
+
+			DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "........ Water: lower %i, upper %i, one (%i,%i,%i), two (%i,%i,%i)",
+					water_neighbor[lower_direction], water_neighbor[upper_direction],
+					water_neighbor[diagonal_lower_direction_one], water_neighbor[side_direction_one], water_neighbor[diagonal_upper_direction_one],
+					water_neighbor[diagonal_lower_direction_two], water_neighbor[side_direction_two], water_neighbor[diagonal_upper_direction_two]);
+
+			/* Tile might have been fixed as a (quite positive) side effect of fixing a previous tile.  In that case: Do nothing. */
+			if (water_neighbor[lower_direction] && water_neighbor[upper_direction]) {
+				continue;
+			}
+
+			/* Start of a river, i.e. water downwards, but not upwards or sidewards.  Do nothing, this is perfectly legal. */
+			if (!water_neighbor[upper_direction] && water_neighbor[lower_direction] && !water_neighbor[side_direction_one] && !water_neighbor[side_direction_two]) {
+				continue;
+			}
+
+			/* Linking rivers with the ocean is performed by a later patch.  Don´t try to "fix" (or rather make worse) those gaps here, instead ignore tiles
+			 * that are closer than two tiles to the ocean, and have no lower water neighbor.
+			 */
+			const int OCEAN_SEARCH_REGION = 2;
+			if (!water_neighbor[lower_direction] && height <= 2) {
+				bool ocean_found = false;
+				for (int x = max((int)TileX(tile) - OCEAN_SEARCH_REGION, 1); x <= min((int)TileX(tile) + OCEAN_SEARCH_REGION, MapMaxX() - 1); x++) {
+					for (int y = max((int)TileY(tile) - OCEAN_SEARCH_REGION, 1); y <= min((int)TileY(tile) + OCEAN_SEARCH_REGION, MapMaxY() - 1); y++) {
+						int curr_height;
+						Slope curr_slope = GetTileSlope(TileXY(x, y), &curr_height);
+						if (curr_height == 0 && curr_slope == SLOPE_FLAT) {
+							ocean_found = true;
+						}
+					}
+				}
+				if (ocean_found) {
+					/* Ocean in the neighborhood, thus this most probably is no real problem tile for this algorithm, but one that will later be linked
+					 * with the ocean by the "link rivers with ocean" step.  I.e. don´t do anything for this tile.
+					 */
+					continue;
+				}
+			}
+
+			/* If the only water neighbor is at the upper side, we don´t need to try to fix the situation in a difficult manner, we can just
+			 * remove that dead river end to fix the situation.
+			 */
+			if (water_neighbor[upper_direction] && !water_neighbor[lower_direction] && !water_neighbor[side_direction_one] && !water_neighbor[side_direction_two]) {
+				MarkNotProcessed(water_info, tile);
+				DeclareNoWater(water_info, tile);
+				continue;
+			}
+
+			/* Some situations can be fixed by moving the river to the diagonal tile. */
+			if (!water_neighbor[upper_direction] && water_neighbor[lower_direction]) {
+				if ((!water_neighbor[side_direction_one] || water_neighbor[diagonal_lower_direction_one]) && water_neighbor[side_direction_two]) {
+					if (this->FixBadRiverSlopeByOtherFlatRiver(tile, neighbor_tiles[diagonal_lower_direction_two], height, water_flow, water_info, water_neighbor[diagonal_lower_direction_two])) {
+						DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "........ Fixing tile by declaring diagonal lower tile (%i,%i) river",
+								  TileX(neighbor_tiles[diagonal_lower_direction_two]), TileY(neighbor_tiles[diagonal_lower_direction_two]));
+						continue;
+					}
+				} else if (water_neighbor[side_direction_one] && (!water_neighbor[side_direction_two] || water_neighbor[diagonal_lower_direction_two])) {
+					if (this->FixBadRiverSlopeByOtherFlatRiver(tile, neighbor_tiles[diagonal_lower_direction_one], height, water_flow, water_info, water_neighbor[diagonal_lower_direction_one])) {
+						DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "........ Fixing tile by declaring diagonal lower tile (%i,%i) river",
+								  TileX(neighbor_tiles[diagonal_lower_direction_one]), TileY(neighbor_tiles[diagonal_lower_direction_one]));
+						continue;
+					}
+				}
+			} else if (water_neighbor[upper_direction] && !water_neighbor[lower_direction]) {
+				if ((!water_neighbor[side_direction_one] || water_neighbor[diagonal_upper_direction_one]) && water_neighbor[side_direction_two]) {
+					if (this->FixBadRiverSlopeByOtherFlatRiver(tile, neighbor_tiles[diagonal_upper_direction_two], height + 1, water_flow, water_info, water_neighbor[diagonal_upper_direction_two])) {
+						DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "........ Fixing tile by declaring diagonal upper tile (%i,%i) river",
+								  TileX(neighbor_tiles[diagonal_upper_direction_two]), TileY(neighbor_tiles[diagonal_upper_direction_two]));
+						continue;
+					}
+				} else if (water_neighbor[side_direction_one] && (!water_neighbor[side_direction_two] || water_neighbor[diagonal_upper_direction_two])) {
+					if (this->FixBadRiverSlopeByOtherFlatRiver(tile, neighbor_tiles[diagonal_upper_direction_one], height + 1, water_flow, water_info, water_neighbor[diagonal_upper_direction_one])) {
+						DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "........ Fixing tile by declaring diagonal upper tile (%i,%i) river",
+								  TileX(neighbor_tiles[diagonal_upper_direction_one]), TileY(neighbor_tiles[diagonal_upper_direction_one]));
+						continue;
+					}
+				}
+			}
+
+			/* Now, we have tried the simple things we can think of.  As they did not help, we try to lower the
+			 * connected component of inclined slopes.  Quite probably, this leaves some other tiles with invalid
+			 * slope towards river.  We fix those in an iteration, where we lower additional tiles until everything
+			 * is fine.
+			 * But, we need to avoid demolishing lakes, as such algorithms can very easily lower half a lake.
+			 * Thus, we only lower a very limited number of lake tiles, and report "Failure" if that doesn´t suffice.
+			 */
+			std::set<TileIndex> inclined_tiles = std::set<TileIndex>();
+			connected_component_calculator->ReInit(height, true, height, true);
+			connected_component_calculator->StoreConnectedComponent(inclined_tiles, tile);
+
+			bool success = true;
+			TerraformerState terraformer_state;
+			for (std::set<TileIndex>::const_iterator inclined_it = inclined_tiles.begin(); inclined_it != inclined_tiles.end(); inclined_it++) {
+				success &= SimulateTerraformTileToSlope(*inclined_it, height, SLOPE_FLAT, terraformer_state);
+			}
+			DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "........ Trying to fix by lowering the connected component of " PRINTF_SIZE " inclined tiles.", inclined_tiles.size());
+
+			std::set<TileIndex> affected_tiles = std::set<TileIndex>();
+			if (success && this->TryCompleteTerraformingByLoweringTiles(terraformer_state, water_info, neighbor_tiles, affected_tiles)) {
+				this->RegisterPossibleNewBadInclinedTiles(affected_tiles, next_problem_tiles, neighbor_tiles, water_info);
+				continue;
+			} else if (!raising_forbidden) {
+				/* In some situations, raising instead of lowering the initial tiles helps.  Try again. */
+				success = true;
+				TerraformerState raise_terraformer_state;
+				for (std::set<TileIndex>::const_iterator inclined_it = inclined_tiles.begin(); inclined_it != inclined_tiles.end(); inclined_it++) {
+					success &= SimulateTerraformTileToSlope(*inclined_it, height + 1, SLOPE_FLAT, raise_terraformer_state);
+				}
+				DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "............ not possible, instead trying to raise them.");
+
+				affected_tiles = std::set<TileIndex>();
+				if (success && this->TryCompleteTerraformingByLoweringTiles(raise_terraformer_state, water_info, neighbor_tiles, affected_tiles)) {
+					this->RegisterPossibleNewBadInclinedTiles(affected_tiles, next_problem_tiles, neighbor_tiles, water_info);
+					continue;
+				} else {
+					DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "............ not possible either.");
+				}
+			}
+
+			/* Tiles whose only water neighbor is one of the side tiles of equal height don´t need to become river.  Discard them if nothing else helped. */
+			if (!water_neighbor[upper_direction] && !water_neighbor[lower_direction] && (!water_neighbor[side_direction_one] || !water_neighbor[side_direction_two])) {
+				MarkNotProcessed(water_info, tile);
+				DeclareNoWater(water_info, tile);
+				continue;
+			}
+
+			DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "........ No success, leaving it for the next iteration.");
+
+			/* If we came until here, we were not able to improve the tile in this iteration, thus register it for the next iteration. */
+			next_problem_tiles.insert(tile);
+		}
+
+		/* Progress means, in the next iteration we need to fix less tiles than in the current iteration.  This also guarantees termination. */
+		progress = (next_problem_tiles.size() < problem_tiles.size());
+
+		/* Register tiles for next iteration */
+		problem_tiles.clear();
+		problem_tiles.insert(next_problem_tiles.begin(), next_problem_tiles.end());
+
+		/* When there is no progress for the first time, proceeding, but without the permission to raise tiles, might help.  Do this. */
+		if (!progress && !raising_forbidden) {
+			progress = true;
+			raising_forbidden = true;
+		}
+	}
+
+	DEBUG(map, RAINFALL_FIX_BAD_INCLINED_RIVERS_LOG_LEVEL, "Finished iteration after %i iterations with " PRINTF_SIZE " remaining tiles, starting post processing.", iteration, problem_tiles.size());
+
+	delete connected_component_calculator;
+}
+
+/* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
 
@@ -4378,6 +4934,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  * (10) Try to fix them using terraforming on the small scale.  Do (among a number of possible actions) what fixes most problem tiles.
  * (11) Try to fix them by moving them, or by declaring them no water if they are not necessary for keeping the river connected.
  * (12) Lower tiles with not yet valid slope, until they are suitable for river.
+ * (13) Improve bad inclined river slopes, i.e. (some of) those that have no direct upper or lower counterpart.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
@@ -4460,6 +5017,14 @@ void RainfallRiverGenerator::GenerateRivers()
 	 *      scale when applied to too many tiles.  On an 1024x1024 test map, e.g. this step is applied to 50 or 100 tiles.
 	 */
 	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator);
+
+	/* (13) Inclined river slopes in some cases have no direct river counterpart upwards or downwards.
+     *      while in some cases, this is perfectly ok (think e.g. of the source of a river), in other cases
+     *      this simply looks bad.  Those tiles exist, since giving the previous algorithms a picture that is
+     *      global enough to avoid such situations is not feasable.
+     *      This improves those slopes.
+     */
+	this->FixBadRiverSlopes(water_flow, water_info);
 
 	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);
