@@ -114,6 +114,8 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
  *  what the algorithm did for which tile.
  */
 extern int *_number_of_lower_tiles;
+extern int *_water_flow;
+extern byte *_water_info;
 
 /** ConnectedComponentCalculator for finding all tiles of a basin, i.e. a connected component
  *  of (straight) neighbor tiles that are all below some given heightlevel.

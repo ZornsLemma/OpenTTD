@@ -230,6 +230,43 @@ public:
 			line_nr++;
 		}
 
+		/* Debugging: Water flow and direction */
+		if (_water_flow != NULL && _water_info != NULL) {
+			byte water_type = (byte)GB(_water_info[tile], 3, 3);
+			switch (water_type) {
+				case 2: SetDParam(0, STR_RIVERS_RIVER); break;
+				case 3: SetDParam(0, STR_RIVERS_LAKE); break;
+				case 4: SetDParam(0, STR_RIVERS_LAKE_CENTER); break;
+				case 5: SetDParam(0, STR_RIVERS_CONSUMED_LAKE_CENTER); break;
+				default: SetDParam(0, STR_RIVERS_WATER);
+			}
+			SetDParam(1, _water_flow[tile]);
+
+			uint direction = GB(_water_info[tile], 0, 3);
+			switch (direction) {
+				case 0: SetDParam(2, STR_RIVERS_NORTH); break;
+				case 1: SetDParam(2, STR_RIVERS_NORTHEAST); break;
+				case 2: SetDParam(2, STR_RIVERS_EAST); break;
+				case 3: SetDParam(2, STR_RIVERS_SOUTHEAST); break;
+				case 4: SetDParam(2, STR_RIVERS_SOUTH); break;
+				case 5: SetDParam(2, STR_RIVERS_SOUTHWEST); break;
+				case 6: SetDParam(2, STR_RIVERS_WEST); break;
+				case 7: SetDParam(2, STR_RIVERS_NORTHWEST); break;
+				default: ;// Impossible default case, as we fetch just three bits above
+			}
+
+			GetString(this->landinfo_data[line_nr], STR_RIVERS_FLOW_INFO, lastof(this->landinfo_data[line_nr]));
+			line_nr++;
+		}
+
+		/* Debugging: Essential lake tiles */
+		if (_water_info != NULL) {
+			if (GB(_water_info[tile], 6, 1)) {
+				GetString(this->landinfo_data[line_nr], STR_RIVERS_ESSENTIAL_LAKE_TILE, lastof(this->landinfo_data[line_nr]));
+				line_nr++;
+			}
+		}
+
 		/* Local authority */
 		SetDParam(0, STR_LAND_AREA_INFORMATION_LOCAL_AUTHORITY_NONE);
 		if (t != NULL) {

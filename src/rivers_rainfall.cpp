@@ -33,6 +33,8 @@
 
 /* Debug copies of the arrays calculated in the river generator, to allow debugging inspection via the map info window. */
 int *_number_of_lower_tiles = NULL;
+int *_water_flow = NULL;
+byte *_water_info = NULL;
 
 /* ================================================================================================================== */
 /* ============================ BasinConnectedComponentCalculator =================================================== */

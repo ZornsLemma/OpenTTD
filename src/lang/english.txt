@@ -1072,6 +1072,21 @@ STR_RIVERS_LOT                                                  :Many
 STR_RIVERS_DETAIL_SETTINGS                                      :Detail settings
 
 STR_RIVERS_NUMBER_OF_LOWERS_LAND_INFO                           :{BLACK}#Lower tiles: {LTBLUE}{COMMA}
+STR_RIVERS_FLOW_INFO                                            :{BLACK}{LTBLUE}{STRING}{BLACK} flow {LTBLUE}{COMMA}{BLACK} with direction {LTBLUE}{STRING}
+STR_RIVERS_NORTH                                                :North
+STR_RIVERS_EAST                                                 :East
+STR_RIVERS_WEST                                                 :West
+STR_RIVERS_SOUTH                                                :South
+STR_RIVERS_NORTHEAST                                            :Northeast
+STR_RIVERS_NORTHWEST                                            :Northwest
+STR_RIVERS_SOUTHEAST                                            :Southeast
+STR_RIVERS_SOUTHWEST                                            :Southwest
+STR_RIVERS_LAKE                                                 :Lake
+STR_RIVERS_LAKE_CENTER                                          :Lake Center
+STR_RIVERS_CONSUMED_LAKE_CENTER                                 :Consumed Lake Center
+STR_RIVERS_RIVER                                                :River
+STR_RIVERS_WATER                                                :Water
+STR_RIVERS_ESSENTIAL_LAKE_TILE                                  :Essential lake tile
 
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced
