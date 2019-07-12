@@ -1426,6 +1426,8 @@ public:
 		WID_TPE_WEIGHT_TEXTBOX                       = ::WID_TPE_WEIGHT_TEXTBOX,                       ///< Textbox for entering the weight of the town placer
 		WID_TPE_HELP_LABEL_SPACER                    = ::WID_TPE_HELP_LABEL_SPACER,                    ///< Vertical spacer below the How it works label
 		WID_TPE_DESC_CONTENT                         = ::WID_TPE_DESC_CONTENT,                         ///< Description of a town placer
+		WID_TPE_PARAM_LABEL_SELECTION                = ::WID_TPE_PARAM_LABEL_SELECTION,                ///< Selection in the label column
+		WID_TPE_PARAM_WIDGET_SELECTION               = ::WID_TPE_PARAM_WIDGET_SELECTION,               ///< Selection in the widget column
 		WID_TPE_OK_BUTTON                            = ::WID_TPE_OK_BUTTON,                            ///< The ok button
 		WID_TPE_ABORT_BUTTON                         = ::WID_TPE_ABORT_BUTTON,                         ///< The abort button
 		WID_TPE_END                                  = ::WID_TPE_END,                                  ///< Marker constant, for adding more widgets dynamically

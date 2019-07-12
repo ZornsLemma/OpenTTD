@@ -557,6 +557,8 @@ void SQGSWindow_Register(Squirrel *engine)
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_WEIGHT_TEXTBOX,                    "WID_TPE_WEIGHT_TEXTBOX");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_HELP_LABEL_SPACER,                 "WID_TPE_HELP_LABEL_SPACER");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_DESC_CONTENT,                      "WID_TPE_DESC_CONTENT");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_PARAM_LABEL_SELECTION,             "WID_TPE_PARAM_LABEL_SELECTION");
+	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_PARAM_WIDGET_SELECTION,            "WID_TPE_PARAM_WIDGET_SELECTION");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_OK_BUTTON,                         "WID_TPE_OK_BUTTON");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_ABORT_BUTTON,                      "WID_TPE_ABORT_BUTTON");
 	SQGSWindow.DefSQConst(engine, ScriptWindow::WID_TPE_END,                               "WID_TPE_END");

@@ -2930,6 +2930,7 @@ STR_RAINFALL_LAKE_ISLAND_MAX_SIZE_QUERY_CAPT                         :{BLACK}Ent
 STR_RAINFALL_LAKE_SHORE_MAX_SIZE_QUERY_CAPT                          :{BLACK}Enter the maximum size for one step of shore generation
 
 # Town placers
+STR_TOWN_PLACER_NONE_CHOSEN                                     :(None Chosen)
 STR_TOWN_PLACER_HUGE_RIVER_NAME                                 :Huge River
 STR_TOWN_PLACER_HUGE_RIVER_DESC                                 :If the flow of the biggest river in a grid section is higher than the given fraction of the maximum flow in the neighborhood, this placer may place a town/city.  Neighborhood means something like five grid sections into each direction.
 STR_TOWN_PLACER_SMALL_RIVER_NAME                                :Small River

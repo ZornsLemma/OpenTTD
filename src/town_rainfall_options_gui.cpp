@@ -10,15 +10,19 @@
 /** @file rainfall_option_gui.cpp Expert GUI for configuring the rainfall river generator */
 
 #include "stdafx.h"
+#include "gfx_func.h"
 #include "querystring_gui.h"
 #include "rivers_rainfall.h"
 #include "string_func.h"
+#include "strings_func.h"
 #include "town.h"
 #include "window_func.h"
 #include "window_gui.h"
 
 #include "table/strings.h"
 
+#include "widgets/dropdown_func.h"
+#include "widgets/dropdown_type.h"
 #include "widgets/genworld_widget.h"
 
 #include "safeguards.h"
@@ -130,6 +134,19 @@ struct PlacerWithParameter {
 	PlacerWithParameter(TownPlacer *placer, int parameter) : placer(placer), parameter(parameter) {};
 };
 
+static DropDownList *BuildTownPlacerDropDown(std::vector<TownPlacer*> placers)
+{
+	DropDownList *list = new DropDownList();
+
+	for (uint z = 0; z < placers.size(); z++) {
+		TownPlacer *placer = placers[z];
+		DropDownListParamStringItem *item = new DropDownListParamStringItem(placer->GetName(), z, false);
+		*list->Append() = item;
+	}
+
+	return list;
+}
+
 struct TownPlacerEditWindow : Window {
 	TownPlacerEditCallback *callback;  ///< Callback to call once the user hits Ok
 	TownPlacerPhase phase;
@@ -184,7 +201,13 @@ struct TownPlacerEditWindow : Window {
 			}
 		}
 
+		/* If the passed config contains no town_placer, select the first one (if it exists) */
+		if (this->config.town_placer < 0 && this->town_placers.size() > 0) {
+			this->town_placer_index = 0;
+		}
+
 		this->InitNested(window_number);
+		this->OnTownPlacerSelected();
 	}
 
 	~TownPlacerEditWindow()
@@ -195,6 +218,70 @@ struct TownPlacerEditWindow : Window {
 		}
 		for (std::vector<TownPlacer*>::iterator it = this->town_placers.begin(); it != this->town_placers.end(); it++) {
 			delete *it;
+		}
+	}
+
+
+	virtual void OnClick(Point pt, int widget, int click_count)
+	{
+		switch (widget) {
+			case WID_TPE_TOWN_PLACER_DROPDOWN: {
+				int selected_index = this->town_placer_index < 0 ? 0 : this->town_placer_index;
+				ShowDropDownList(this, BuildTownPlacerDropDown(this->town_placers), selected_index, WID_TPE_TOWN_PLACER_DROPDOWN);
+				break;
+			}
+		}
+	}
+
+	void OnTownPlacerSelected()
+	{
+		if (this->town_placer_index >= 0) {
+	  		NWidgetStacked *label_selection = this->GetWidget<NWidgetStacked>(WID_TPE_PARAM_LABEL_SELECTION);
+	  		NWidgetStacked *widget_selection = this->GetWidget<NWidgetStacked>(WID_TPE_PARAM_WIDGET_SELECTION);
+			label_selection->SetDisplayedPlane(this->town_placer_index);
+			widget_selection->SetDisplayedPlane(this->town_placer_index);
+		}
+	}
+
+	virtual void OnDropdownSelect(int widget, int index)
+	{
+		switch (widget) {
+			case WID_TPE_TOWN_PLACER_DROPDOWN:
+				this->town_placer_index = index;
+				this->OnTownPlacerSelected();
+
+				this->SetDirty();
+//				StringID description = this->town_placers[this->town_placer_index]->GetDescription();
+//				this->GetWidget<NWidgetLeaf>(WID_TPE_DESC_CONTENT)->widget_data = description;
+				break;
+		}
+	}
+
+	virtual void SetStringParameters(int widget) const
+	{
+		switch (widget) {
+			case WID_TPE_TOWN_PLACER_DROPDOWN:
+				StringID town_placer_name;
+				if (this->town_placer_index != -1) {
+					town_placer_name = this->town_placers[this->town_placer_index]->GetName();
+				} else {
+					town_placer_name = STR_TOWN_PLACER_NONE_CHOSEN;
+				}
+				SetDParam(0, town_placer_name);
+				break;
+		}
+	}
+
+	virtual void DrawWidget(const Rect &r, int widget) const
+	{
+		switch (widget) {
+			case WID_TPE_DESC_CONTENT:
+//				GfxFillRect(r.left + 1, r.top + 1, r.right - 1, r.bottom - 1, PC_GREY);
+				if (this->town_placer_index >= 0) {
+					StringID description = this->town_placers[this->town_placer_index]->GetDescription();
+					DrawStringMultiLine(r.left, r.right, r.top, r.bottom, description, TC_BLACK);
+				}
+				break;
 		}
 	}
 };
@@ -257,10 +344,19 @@ static NWidgetBase *GetContentWidgets(int *biggest_index)
 	desc_content->SetResize(1, 1);
 	widget_column->Add(desc_content);
 
+	NWidgetStacked *param_label_selection = new NWidgetStacked();
+	param_label_selection->SetIndex(WID_TPE_PARAM_LABEL_SELECTION);
+
+	NWidgetStacked *param_widget_selection = new NWidgetStacked();
+	param_widget_selection->SetIndex(WID_TPE_PARAM_WIDGET_SELECTION);
+
 	int curr_widget_index = WID_TPE_END;
 
 	std::vector<TownPlacer*> town_placers = GetAllTownPlacers();
 	for (std::vector<TownPlacer*>::const_iterator it = town_placers.begin(); it != town_placers.end(); it++) {
+		NWidgetVertical *param_label_container = new NWidgetVertical();
+		NWidgetVertical *param_widget_container = new NWidgetVertical();
+
 		TownPlacer *town_placer = *it;
 		std::map<int, TownPlacerParameter> parameters = town_placer->GetParameters();
 		for (std::map<int, TownPlacerParameter>::const_iterator it2 = parameters.begin(); it2 != parameters.end(); it2++) {
@@ -268,14 +364,21 @@ static NWidgetBase *GetContentWidgets(int *biggest_index)
 
 			NWidgetLeaf *param_label = new NWidgetLeaf(WWT_TEXT, COLOUR_GREY, -1, parameter.GetName(), parameter.GetTooltip());
 			param_label->SetFill(1, 1);
-			label_column->Add(param_label);
+			param_label_container->Add(param_label);
+			AddVerticalSpacer(param_label_container, 0);
 
 			NWidgetLeaf *param_textbox = new NWidgetLeaf(WWT_EDITBOX, COLOUR_GREY, curr_widget_index++, 0, parameter.GetTooltip());
 			param_textbox->SetMinimalSize(100, 12);
-			widget_column->Add(param_textbox);
+			param_widget_container->Add(param_textbox);
 		}
 		delete town_placer;
+
+		param_label_selection->Add(param_label_container);
+		param_widget_selection->Add(param_widget_container);
 	}
+
+	label_column->Add(param_label_selection);
+	widget_column->Add(param_widget_selection);
 
 	outer_container->Add(label_column);
 	outer_container->Add(widget_column);
