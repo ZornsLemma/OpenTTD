@@ -689,6 +689,20 @@ CalculateFlowIterator::~CalculateFlowIterator()
 	delete this->connected_component_calculator;
 }
 
+int DefineLakesIterator::GetLakeSizeAtTile(TileIndex tile)
+{
+	return this->tile_to_lake.find(tile) != this->tile_to_lake.end() ? this->tile_to_lake[tile]->GetNumberOfLakeTiles() : 0;
+}
+
+int DefineLakesIterator::GetMaximumLakeSize()
+{
+	int max_size = 0;
+	for (std::map<TileIndex, Lake*>::const_iterator it = this->tile_to_lake.begin(); it != this->tile_to_lake.end(); it++) {
+		max_size = max(max_size, it->second->GetNumberOfLakeTiles());
+	}
+	return max_size;
+}
+
 /* ================================================================================================================== */
 /* ================================== CurveFlowModificator ========================================================== */
 /* ================================================================================================================== */
@@ -3417,9 +3431,11 @@ void RainfallRiverGenerator::AddExtraRiverTilesToWaterTiles(std::vector<TileWith
  *  Though usually, only tiles with valid slope will be passed to that function, it performs a check
  *  wether slope is indeed valid, and prints a warning to the log if not.
  */
-void RainfallRiverGenerator::GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, byte *water_info)
+void RainfallRiverGenerator::GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, int *max_river_flow)
 {
 	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_MAKE_WATER = " PRINTF_SIZE "", water_tiles.size() / 100);
+
+	*max_river_flow = 0;
 
 	/* Here, finally, we actually generate the water.
 	 * Note that this step is separated from the previous one, in order to have the chance to do a last check, wether slope is actually correct.
@@ -3429,6 +3445,11 @@ void RainfallRiverGenerator::GenerateRiverTiles(std::vector<TileWithHeightAndFlo
 	 */
 	for (TileIndex tile = 0; tile < MapSize(); tile++) {
 		if (WasProcessed(water_info, tile)) {
+			/* Collect information useful for generating cities */
+			if (IsRiver(water_info, tile)) {
+				*max_river_flow = max(*max_river_flow, water_flow[tile]);
+			}
+
 			Slope slope = GetTileSlope(tile);
 			if (slope == SLOPE_FLAT || slope == SLOPE_NE || slope == SLOPE_SE || slope == SLOPE_NW || slope == SLOPE_SW) {
 				MakeRiver(tile, Random());
@@ -5954,6 +5975,234 @@ void PrintRunningTimeToDebug(const char* step, int64 &base_millis)
 	DEBUG(map, 0, "Running time for step %s " OTTD_PRINTF64 "." OTTD_PRINTF64 "s", step, length / 1000, length % 1000);
 }
 
+/* ========================================================= */
+/* ======= Derive information used for town placement ====== */
+/* ========================================================= */
+
+void RainfallRiverGenerator::CalculateTownScoreStepOne(TownScore *town_scores, uint x, uint y, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int max_river_flow, int max_lake_size)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+
+
+	TownScore *town_score = &town_scores[TownGridXY(x, y)];
+	town_score->max_river_flow = 0;
+	town_score->river_size_score = 0;
+	town_score->river_branch_score = 0;
+	town_score->lake_amount_score = 0;
+	town_score->ocean_amount_score = 0;
+	town_score->max_lake_size = 0;
+	town_score->lake_size_score = 0;
+	town_score->river_end_score = 0;
+
+	town_score->flat_score = 0;
+	town_score->min_height = _settings_game.construction.max_heightlevel;
+	town_score->average_height = -1;
+	town_score->max_height = 0;
+
+	int number_of_lake_tiles = 0;
+
+	/* Number of lake or ocean tiles in the grid */
+	int number_of_ocean_tiles = 0;
+
+	/* Number of tiles that are neither river, nor lake, nor ocean. */
+	int number_of_non_water_tiles = 0;
+
+	/* Number of flat tiles that are neither river, nor lake, nor ocean */
+	int number_of_flat_tiles = 0;
+
+
+	/* Sum of heightlevels over all tiles that are neither river, nor lake, nor ocean. */
+	int height_sum = 0;
+
+	for (uint ty = y * TOWN_GRID_SIZE; ty < (y + 1) * TOWN_GRID_SIZE; ty++) {
+		for (uint tx = x * TOWN_GRID_SIZE; tx < (x + 1) * TOWN_GRID_SIZE; tx++) {
+			if (tx >= 1 && ty >= 1 && tx < MapMaxX() - 1 && ty < MapMaxY() - 1) {
+				TileIndex tile = TileXY(tx, ty);
+				StoreAllNeighborTiles(tile, neighbor_tiles);
+
+				int height;
+				Slope slope = GetTileSlope(tile, &height);
+
+				/* min_height, max_height */
+			    town_score->min_height = min(town_score->min_height, height);
+				town_score->max_height = max(town_score->max_height, height);
+
+				if (IsRiver(water_info, tile)) {
+					/* river_size_score */
+					town_score->max_river_flow = max(town_score->max_river_flow, water_flow[tile]);
+//					town_score->river_size_score = max(town_score->river_size_score, (water_flow[tile] * 1000) / max_river_flow);
+
+					/* river_branch_score */
+					int flow_one = -1;
+					int flow_two = -1;
+					for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+						if (neighbor_tiles[n] != INVALID_TILE && IsRiver(water_info, neighbor_tiles[n]) && water_flow[neighbor_tiles[n]] >= _settings_newgame.game_creation.rainfall.flow_for_river) {
+							TileIndex candidate_tile = AddDirectionToTile(neighbor_tiles[n], GetFlowDirection(water_info, neighbor_tiles[n]));
+							if (candidate_tile == tile) {
+								if (flow_one == -1) {
+									flow_one = water_flow[neighbor_tiles[n]];
+								} else if (flow_two == -1) {
+									flow_two = water_flow[neighbor_tiles[n]];
+								} else if (water_flow[neighbor_tiles[n]] > min(flow_one, flow_two)) {
+									if (flow_one > flow_two) {
+										flow_two = water_flow[neighbor_tiles[n]];
+									} else {
+										flow_one = water_flow[neighbor_tiles[n]];
+									}
+								}
+							}
+						}
+					}
+					if (flow_one > 0 && flow_two > 0) {
+						if (flow_one > flow_two) {
+							int tmp = flow_one;
+							flow_one = flow_two;
+							flow_two = tmp;
+						}
+						/* Caution, huge numbers: Worst case map 4096x4096; flow = 2^12 * 2^12 = 2^24 in the worst case.  Multiplication below: 2^24*2^24*2^10 = 2^58 < 2^64 */
+						int curr_score = max_river_flow > 0 ? (int)(((double)flow_one * (double)water_flow[tile] * (double)1000) / ((double)flow_two * (double)max_river_flow)) : 0;
+						DEBUG(misc, 9, ".... Calculated river branch score %i for (%u, %u), flow_one = %i, flow_two = %i, water_flow[tile] = %i, max_river_flow = %i",
+											curr_score, tx, ty, flow_one, flow_two, water_flow[tile], max_river_flow);
+						town_score->river_branch_score = max(town_score->river_branch_score, curr_score);
+					}
+
+					/* river_end_score */
+					TileIndex candidate_tile = AddDirectionToTile(tile, GetFlowDirection(water_info, tile));
+					if (candidate_tile != INVALID_TILE && (IsOrdinaryLakeTile(water_info, candidate_tile) || IsLakeCenter(water_info, candidate_tile) || IsTileType(candidate_tile, MP_WATER))) {
+						town_score->river_end_score = max_river_flow > 0 ? max(town_score->river_end_score, (water_flow[tile] * 1000) / max_river_flow) : 0;
+					}
+				} else if (IsOrdinaryLakeTile(water_info, tile) || IsLakeCenter(water_info, tile)) {
+					/* lake_amount_score */
+					number_of_lake_tiles++;
+
+					/* lake_size_score */
+					town_score->max_lake_size = max(town_score->max_lake_size, define_lakes_iterator->GetLakeSizeAtTile(tile));
+					town_score->lake_size_score = max_lake_size > 0 ? max(town_score->lake_size_score, (define_lakes_iterator->GetLakeSizeAtTile(tile) * 1000) / max_lake_size) : 0;
+				} else if (IsTileType(tile, MP_WATER)) {
+					/* ocean_amount_score */
+					number_of_ocean_tiles++;
+				} else {
+					number_of_non_water_tiles++;
+
+ 					/* average_height */
+					height_sum += height;
+
+					/* flat_score */
+					if (slope == SLOPE_FLAT) {
+						number_of_flat_tiles++;
+					}
+				}
+			}
+		}
+	}
+
+	town_score->lake_amount_score = (number_of_lake_tiles * 1000) / (TOWN_GRID_SIZE * TOWN_GRID_SIZE);
+	town_score->ocean_amount_score = (number_of_ocean_tiles * 1000) / (TOWN_GRID_SIZE * TOWN_GRID_SIZE);
+	town_score->flat_score = (number_of_non_water_tiles == 0 ? 0 : (number_of_flat_tiles * 1000) / number_of_non_water_tiles);
+	town_score->average_height = (number_of_non_water_tiles == 0 ? -1 : (height_sum * 1000) / number_of_non_water_tiles);
+}
+
+void RainfallRiverGenerator::CalculateTownScoreStepTwo(TownScore *town_scores, uint x, uint y, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator)
+{
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	TownScore *town_score = &town_scores[TownGridXY(x, y)];
+
+	int max_river_flow = 0;
+	int search_region_size = 5;
+
+	/* Determine the maximum river flow in the neighborhood.  The maximum flow on map might be misleading, as if e.g.
+	 * three equally sized rivers merge near the river end, hardly any river tiles above 30% of the maximum
+	 * flow will exist on map.  This then might make some town placers useless, as their criteria are not met.
+	 * Avoid this by always taking just a limited area into account.
+	 *
+	 * Basically, search five grid units into each direction.  Near the map border, this isn´t possible for some directions.
+	 * In that case, to avoid a shrinking area (which makes the sample of tiles used e.g. for max_river_flow smaller, which increases
+	 * the probability for some placers, which then give a bias towards cities near the map border) enlarge the search area
+	 * at the other side accordingly.
+	 */
+	int min_x = (int)x - search_region_size;
+	int max_x = (int)x + search_region_size;
+	if (min_x < 0) {
+		max_x += -min_x;
+		min_x = 0;
+	}
+	if (max_x >= (int)(MapSizeX() / TOWN_GRID_SIZE)) {
+		min_x = max(0, (int)min_x - ((int)max_x - (int)(MapSizeX() / TOWN_GRID_SIZE)));
+		max_x = (MapSizeX() / TOWN_GRID_SIZE) - 1;
+	}
+
+	int min_y = (int)y - search_region_size;
+	int max_y = (int)y + search_region_size;
+	if (min_y < 0) {
+		max_y += -min_y;
+		min_y = 0;
+	}
+	if (max_y >= (int)(MapSizeY() / TOWN_GRID_SIZE)) {
+		min_y = max(0, (int)min_y - ((int)max_y - (int)(MapSizeY() / TOWN_GRID_SIZE)));
+		max_y = (MapSizeY() / TOWN_GRID_SIZE) - 1;
+	}
+
+	for (uint sy = (uint)min_y; sy <= (uint)max_y; sy++) {
+		for (uint sx = (uint)min_x; sx <= (uint)max_x; sx++) {
+			TownScore* searched_town_score = &town_scores[TownGridXY(sx, sy)];
+			max_river_flow = max(max_river_flow, searched_town_score->max_river_flow);
+		}
+	}
+	town_score->river_size_score = max_river_flow > 0 ? (town_score->max_river_flow * 1000) / max_river_flow : 0;
+
+	/* river_branch_score */
+	for (uint ty = y * TOWN_GRID_SIZE; ty < (y + 1) * TOWN_GRID_SIZE; ty++) {
+		for (uint tx = x * TOWN_GRID_SIZE; tx < (x + 1) * TOWN_GRID_SIZE; tx++) {
+			if (tx >= 1 && ty >= 1 && tx < MapMaxX() - 1 && ty < MapMaxY() - 1) {
+				TileIndex tile = TileXY(tx, ty);
+				StoreAllNeighborTiles(tile, neighbor_tiles);
+
+				if (IsRiver(water_info, tile)) {
+					int flow_one = -1;
+					int flow_two = -1;
+					for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+						if (neighbor_tiles[n] != INVALID_TILE && IsRiver(water_info, neighbor_tiles[n]) && water_flow[neighbor_tiles[n]] >= _settings_newgame.game_creation.rainfall.flow_for_river) {
+							TileIndex candidate_tile = AddDirectionToTile(neighbor_tiles[n], GetFlowDirection(water_info, neighbor_tiles[n]));
+							if (candidate_tile == tile) {
+								if (flow_one == -1) {
+									flow_one = water_flow[neighbor_tiles[n]];
+								} else if (flow_two == -1) {
+									flow_two = water_flow[neighbor_tiles[n]];
+								} else if (water_flow[neighbor_tiles[n]] > min(flow_one, flow_two)) {
+									if (flow_one > flow_two) {
+										flow_two = water_flow[neighbor_tiles[n]];
+									} else {
+										flow_one = water_flow[neighbor_tiles[n]];
+									}
+								}
+							}
+						}
+					}
+					if (flow_one > 0 && flow_two > 0) {
+						if (flow_one > flow_two) {
+							int tmp = flow_one;
+							flow_one = flow_two;
+							flow_two = tmp;
+						}
+						/* Caution, huge numbers: Worst case map 4096x4096; flow = 2^12 * 2^12 = 2^24 in the worst case.  Multiplication below: 2^24*2^24*2^10 = 2^58 < 2^64 */
+						int curr_score = (int)(((double)flow_one * (double)water_flow[tile] * (double)1000) / ((double)flow_two * (double)max_river_flow));
+						DEBUG(misc, 9, ".... Calculated river branch score %i for (%u, %u), flow_one = %i, flow_two = %i, water_flow[tile] = %i, max_river_flow = %i",
+											curr_score, tx, ty, flow_one, flow_two, water_flow[tile], max_river_flow);
+						town_score->river_branch_score = max(town_score->river_branch_score, curr_score);
+					}
+				}
+			}
+		}
+	}
+
+	DEBUG(misc, RAINFALL_TOWN_LOG_LEVEL, "Grid (%u,%u): river_size = %i, river_branch = %i, water_amount = (%i,%i), max_lake = %i, lake_size = %i, river_end = %i, flat = %i, height = (%i,%i,%i)",
+	  x, y, town_score->river_size_score, town_score->river_branch_score, town_score->lake_amount_score,
+			  town_score->ocean_amount_score, town_score->max_lake_size, town_score->lake_size_score, town_score->river_end_score,
+			  town_score->flat_score, town_score->min_height, town_score->average_height, town_score->max_height);
+}
+
 /** The generator function.  The following steps are performed in this order when generating rivers:
  *  (1) Calculate a height index, for fast iteration over all tiles of a particular heightlevel.
  *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
@@ -6132,7 +6381,8 @@ void RainfallRiverGenerator::GenerateRivers()
 	PrintRunningTimeToDebug(" (19) Another time lower tiles until valid: ", base_millis);
 
 	/* (20) Finally make tiles that are planned to be river river in the OpenTTD sense. */
-	this->GenerateRiverTiles(water_tiles, water_info);
+	int max_river_flow;
+	this->GenerateRiverTiles(water_tiles, water_flow, water_info, &max_river_flow);
 	PrintRunningTimeToDebug(" (20) Actually generate rivers in OpenTTD sense: ", base_millis);
 
 	delete this->lake_connected_component_calculator;

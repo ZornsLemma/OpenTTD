@@ -161,7 +161,65 @@ struct TownPlacerParameter {
 /** Town related score for a rectangular section of the map, e.g. a 16x16 grid.
  */
 struct TownScore {
+	/** The maximum river flow in the grid. */
+	int max_river_flow;
 
+	/** The maximum river flow in the grid divided by the maximum river flow in the neighborhood (grid of size 5*16 tiles in each direction),
+	 *  scaled on a range 0...1000.
+	 */
+	int river_size_score;
+
+	/** The maximum value (flow_one / flow_two) * (branch_flow / maximum_map_flow) for any
+	 *  river branch (where two or more rivers join in a tile) in the grid, scaled to a range
+	 *  0...1000.
+	 *  flow_one and flow_two are the flows of the incoming rivers (switched such that flow_one <= flow_two),
+	 *  if more than two rivers merge the two biggest flows, branch_flow is the first flow of the merged river,
+	 *  maximum_map_flow is the maximum river flow in the neighborhood (grid of size 5 * 16 tiles in each direction).
+	 *
+	 *  The idea is that this value is the bigger the more flow the merging rivers have, and the more
+	 *  equal-sized the two rivers are.
+	 */
+	int river_branch_score;
+
+	/** The percentage of lake in the grid, scale to a range 0..1000
+	 */
+	int lake_amount_score;
+
+	/** The percentage of ocean in the grid, scaled to a range 0...1000
+	 */
+	int ocean_amount_score;
+
+	/** The size of the biggest lake intersecting the grid.
+	  */
+	int max_lake_size;
+
+	/** The size of the biggest lake intersecting the grid, divided by the size of the biggest lake on map.
+	 */
+	int lake_size_score;
+
+	/** The flow of the biggest river ending up in a lake or the ocean, divided by the maximum river flow on
+	 *  map, scaled on a range 0...1000
+	 */
+	int river_end_score;
+
+	/** The amount of SLOPE_FLAT tiles in the grid, divided by the total number of tiles in the grid, scaled
+	 *  to a range 0...1000.  River, lake and ocean tiles don´t count.
+	 */
+	int flat_score;
+
+	/** Minimum heightlevel in the grid.
+	 */
+	int min_height;
+
+	/** Average heightlevel in the grid.  River, lake and ocean tiles don´t count.  If no other tile is present,
+	 *  -1 will be calculated.  Multiplied by 1000 for the sake of getting more detailed values, i.e. average
+	 *  heightlevel 2.4 gives 2400.
+	 */
+	int average_height;
+
+	/** Maximum heightlevel in the grid.
+	 */
+	int max_height;
 };
 
 typedef int TownGridIndex;

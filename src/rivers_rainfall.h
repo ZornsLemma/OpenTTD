@@ -131,6 +131,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL 9
 #define RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL 9
 #define RAINFALL_PROGRESS_LOG_LEVEL 9
+#define RAINFALL_TOWN_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -939,6 +940,9 @@ public:
 	inline void EraseLakeCenterMapping(TileIndex tile) { this->tile_to_lake.erase(tile); }
 	inline void AddToFlow(TileIndex tile, int offset) { this->water_flow[tile] += offset; }
 	inline void SetWaterInfo(TileIndex tile, byte value) { this->water_info[tile] = value; }
+
+	int GetLakeSizeAtTile(TileIndex tile);
+	int GetMaximumLakeSize();
 };
 
 /* Helper class to place both (desired) height and flow of a tile in a map.
@@ -1245,7 +1249,7 @@ private:
 	void DeterminePlannedWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
 	void PrepareRiversAndLakes(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithValue> &extra_river_tiles);
 	void AddExtraRiverTilesToWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::vector<TileWithValue> &extra_river_tiles);
-	void GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, byte *water_info);
+	void GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, int *max_river_flow);
 
 	void MarkCornerTileGuaranteed(int *water_flow, byte *water_info, std::set<TileIndex>* lake_tiles, std::set<TileIndex> &guaranteed_water_tiles, TileIndex tile, Direction direction,
 						  Direction alternative_direction_one, Direction alternative_direction_two);
@@ -1304,6 +1308,9 @@ private:
 	void ModifyValleyGrid(int *valley_grid, int number_of_steps, int radius, int max_offset, bool init);
 	void InitializeValleyGrid(int *valley_grid);
 	void GenerateWiderRivers(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles);
+
+	void CalculateTownScoreStepOne(TownScore *town_scores, uint x, uint y, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int max_river_flow, int max_lake_size);
+	void CalculateTownScoreStepTwo(TownScore *town_scores, uint x, uint y, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
 
 public:
 	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);
