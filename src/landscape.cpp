@@ -32,6 +32,7 @@
 #include "company_func.h"
 #include "saveload/saveload.h"
 #include "rivers_path.h"
+#include "rivers_rainfall.h"
 
 #include "table/strings.h"
 #include "table/sprites.h"
@@ -935,11 +936,20 @@ static void CreateDesertOrRainForest()
  */
 static void CreateRivers()
 {
-	RiverGenerator *river_generator = new PathRiverGenerator();
+	if (_settings_game.game_creation.amount_of_rivers > 0) {
+		RiverGenerator *river_generator;
 
-	river_generator->GenerateRivers();
+		int generator = _settings_game.game_creation.river_generator;
+		switch (generator) {
+			case RG_ORIGINAL: river_generator = new PathRiverGenerator(); break;
+			case RG_RAINFALL: river_generator = new RainfallRiverGenerator(); break;
+			default: NOT_REACHED();
+		}
 
-	delete river_generator;
+		river_generator->GenerateRivers();
+
+		delete river_generator;
+	}
 }
 
 void GenerateLandscape(byte mode)
