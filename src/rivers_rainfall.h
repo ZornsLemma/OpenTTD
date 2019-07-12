@@ -122,6 +122,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL 9
 #define RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL 9
 #define RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL 9
+#define RAINFALL_MOVE_WATER_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -1130,7 +1131,20 @@ private:
 							   DefineLakesIterator *define_lakes_iterator, bool only_self, bool only_improve, bool make_water_afterwards);
 	void FixByLocalTerraforming(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
 
+	void FixByMovingProblemTiles(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
+
+	bool MakeDiagonalTileWaterIfPossible(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], TileIndex water_neighbor_tiles[DIR_COUNT],
+										 Direction straight_direction_one, Direction straight_direction_two, Direction diagonal_direction, int *water_flow, byte *water_info,
+										 DefineLakesIterator *define_lakes_iterator,
+										 std::set<TileIndex> &tiles_fixed, std::set<TileIndex> &new_problem_tiles);
+	bool MakeParallelTilesWaterIfPossible(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], TileIndex water_neighbor_tiles[DIR_COUNT],
+										  Direction straight_direction_one, Direction straight_direction_two, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator,
+										  std::set<TileIndex> &tiles_fixed, std::set<TileIndex> &new_problem_tiles);
+	bool AreTilesLinkedByRiver(TileIndex tile, TileIndex water_neighbor_tiles[DIR_COUNT], Direction direction_one, Direction direction_two, byte *water_info, int limit);
+
+	bool IsIsolatedCorner(TileIndex neighbor_tiles[DIR_COUNT], Direction corner_direction, Direction adjacent_direction_one, Direction adjacent_direction_two);
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
+	int StoreNeighborTilesPlannedForWaterAndGaps(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
 	bool IsInclinedSlopePossible(TileIndex tile, TileIndex water_neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info, Direction direction, Slope slope, Slope desired_slope, int min_diagonal_height,
 								 Direction neighbor_direction_one, Direction neighbor_direction_two, Direction diagonal_direction_one, Direction diagonal_direction_two);
 	void RegisterTilesAffectedByTerraforming(TerraformerState &terraformer_state, std::set<TileIndex> &affected_tiles, byte *water_info, int min_height, bool only_processed_tiles = true);

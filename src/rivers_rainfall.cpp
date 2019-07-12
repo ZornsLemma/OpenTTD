@@ -3360,6 +3360,45 @@ void RainfallRiverGenerator::MarkCornerTileGuaranteed(int *water_flow, byte *wat
 /* ======= Fix problem tiles using local terraforming ====== */
 /* ========================================================= */
 
+/** Stores the neighbor tiles planned for water, and at the same time, calculates the number
+ *  of gaps between them.  A gap consists of a consecutive, and not enlargable series of non-water
+ *  neighbor tiles, that not just consists of exactly one corner tile.
+ */
+int RainfallRiverGenerator::StoreNeighborTilesPlannedForWaterAndGaps(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info)
+{
+	this->StoreNeighborTilesPlannedForWater(tile, neighbor_tiles, water_flow, water_info);
+
+	int number_of_gaps = 0;
+	bool in_water = false;
+	bool starts_with_water = neighbor_tiles[0] != INVALID_TILE;
+	for (int n = 0; n < DIR_COUNT; n++) {
+		if (neighbor_tiles[n] != INVALID_TILE) {
+			if (!in_water) {
+				in_water = true;
+			}
+		} else {
+			if (in_water) {
+				in_water = false;
+				number_of_gaps++;
+			}
+		}
+	}
+
+	if (in_water && !starts_with_water) {
+		number_of_gaps++;
+	}
+
+	/*  Don´t count isolated corners as producing gaps.  If they exist, then we expect that the algorithms
+	 *  before produced other ways for linking tiles.
+	 */
+	number_of_gaps -= this->IsIsolatedCorner(neighbor_tiles, DIR_N, DIR_NW, DIR_NE);
+	number_of_gaps -= this->IsIsolatedCorner(neighbor_tiles, DIR_E, DIR_NE, DIR_SE);
+	number_of_gaps -= this->IsIsolatedCorner(neighbor_tiles, DIR_S, DIR_SE, DIR_SW);
+	number_of_gaps -= this->IsIsolatedCorner(neighbor_tiles, DIR_W, DIR_NW, DIR_SW);
+
+	return number_of_gaps;
+}
+
 /** Tries to improves a problem tile (i.e. a planned river tile with invalid slope) by performing terraforming on the small scale.
  *  See FixByLocalTerraforming for the general idea.
  *  @param tile some tile
@@ -3608,9 +3647,327 @@ void RainfallRiverGenerator::FixByLocalTerraforming(std::set<TileIndex> &problem
 	DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "Finishing FixByLocalTerraforming after %i iterations with " PRINTF_SIZE " problem tiles.", number_of_iterations, problem_tiles.size());
 }
 
+/* ======================================================================================= */
+/* ======= Fix problem tiles by moving them, or declaring them no river if possible ====== */
+/* ======================================================================================= */
+
+/** Tries to fix problem tiles (i.e. tiles planned to become river, but with invalid slope)
+ *  by some strategies that try to circumvent the problem using other tiles.
+ */
+void RainfallRiverGenerator::FixByMovingProblemTiles(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info,
+													 DefineLakesIterator *define_lakes_iterator)
+{
+	DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "Starting FixByMovingProblemTiles with " PRINTF_SIZE " problem tiles.", problem_tiles.size());
+
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+	TileIndex water_neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+	std::set<TileIndex> new_problem_tiles = std::set<TileIndex>();
+	int number_of_iterations = 0;
+
+	/* Minimum number of problem tiles reached so far */
+	uint min_number_of_problem_tiles = INT32_MAX;
+
+	/* Number of iterations so far where the number of problem tiles increased instead of decreasing. */
+	int number_of_worse_iterations = 0;
+
+	do {
+		min_number_of_problem_tiles = min(min_number_of_problem_tiles, problem_tiles.size());
+
+		/* Scan all problem tiles */
+		std::set<TileIndex> tiles_fixed = std::set<TileIndex>();
+		for (std::set<TileIndex>::const_iterator it = problem_tiles.begin(); it != problem_tiles.end(); it++) {
+			TileIndex tile = *it;
+
+			StoreAllNeighborTiles(tile, neighbor_tiles);
+			int number_of_gaps = this->StoreNeighborTilesPlannedForWaterAndGaps(tile, water_neighbor_tiles, water_flow, water_info);
+
+			/* Try to circumvent the problem by making a diagonal tile water */
+			this->MakeDiagonalTileWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_NW, DIR_NE, DIR_N, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+			this->MakeDiagonalTileWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_NE, DIR_SE, DIR_E, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+			this->MakeDiagonalTileWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_SE, DIR_SW, DIR_S, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+			this->MakeDiagonalTileWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_SW, DIR_NW, DIR_W, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+
+			/* Try to circumvent the problem by making a parallel tile water (i.e. we have two opposite straight neighbor tiles planned to become river, then we try wether we
+			 * can make the line of three tiles parallel to them river.  If yes, our problematic tile is no longer needed to keep things connected.
+			 */
+			this->MakeParallelTilesWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_NW, DIR_SE, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+			this->MakeParallelTilesWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_SE, DIR_NW, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+			this->MakeParallelTilesWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_NE, DIR_SW, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+			this->MakeParallelTilesWaterIfPossible(tile, neighbor_tiles, water_neighbor_tiles, DIR_SW, DIR_NE, water_flow, water_info, define_lakes_iterator, tiles_fixed, new_problem_tiles);
+
+			number_of_gaps = this->StoreNeighborTilesPlannedForWaterAndGaps(tile, water_neighbor_tiles, water_flow, water_info);
+
+			/* If the tile has no more than one gaps left, or the opposite neighbor tiles are linked by river elsewise, we can safely declare the problematic tile no river, without fearing that
+			 * we leave an unconnected river.
+			 */
+			if ((number_of_gaps <= 1
+				|| (   AreTilesLinkedByRiver(tile, water_neighbor_tiles, DIR_NW, DIR_SE, water_info, 20)
+					&& AreTilesLinkedByRiver(tile, water_neighbor_tiles, DIR_NE, DIR_SW, water_info, 20)
+					&& AreTilesLinkedByRiver(tile, water_neighbor_tiles, DIR_NW, DIR_NE, water_info, 20)
+					&& AreTilesLinkedByRiver(tile, water_neighbor_tiles, DIR_NE, DIR_SE, water_info, 20)
+					&& AreTilesLinkedByRiver(tile, water_neighbor_tiles, DIR_SE, DIR_SW, water_info, 20)
+					&& AreTilesLinkedByRiver(tile, water_neighbor_tiles, DIR_SW, DIR_NW, water_info, 20)))
+				&& (!IsTileType(tile, MP_WATER) || !IsCoastTile(tile))) {
+
+				DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "........ Making tile (%i,%i) no river, since either no alternative tile is necessary, or we found one.", TileX(tile), TileY(tile));
+
+				MarkNotProcessed(water_info, tile);  // TODO: Remove from lakes if necessary?
+				DeclareNoWater(water_info, tile);
+			} else {
+				/* Tile was not fixed by the above attempts, leave for the next iteration. */
+				new_problem_tiles.insert(tile);
+			}
+		}
+
+		// Finally replace the contents of the problem_tiles set with the contents for the next iteration.
+		problem_tiles.clear();
+		for (std::set<TileIndex>::const_iterator it = new_problem_tiles.begin(); it != new_problem_tiles.end(); it++) {
+			if (tiles_fixed.find(*it) == tiles_fixed.end()) {
+				problem_tiles.insert(*it);
+			} else {
+				DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "........ Ignoring tile (%i,%i) for the next iteration, since it was fixed.", TileX(*it), TileY(*it));
+			}
+		}
+		new_problem_tiles.clear();
+		number_of_iterations++;
+
+		/* Ensure termination of the loop.  The heuristic steps performed above are allowed to add or remove river tiles (MarkNotProcessed above means remove).
+		 * They can do this for the same tile multiple times in a row, and allowing them to do so sometimes actually improves the situation.
+		 * (on a 1024x1024 test map, forbidding to execute MarkProcessed on the same tile twice raised the number of problem tiles the algorithm left
+		 *  from about 100 to about 400).
+		 * Thus: If the number of problem tiles decreased in an iteration, everything is fine.  But we allow a limited number of steps where it remains
+		 * above the minimum number of problem tiles reached so far, to allow it to leave some situation that can only improved by first making things
+		 * worse.
+		 */
+		if (problem_tiles.size() < min_number_of_problem_tiles) {
+			number_of_worse_iterations = 0;
+		} else {
+			number_of_worse_iterations++;
+		}
+	} while (number_of_worse_iterations < 20);
+
+	DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "Finishing FixByMovingProblemTiles after %i iterations with " PRINTF_SIZE " problem tiles.", number_of_iterations, problem_tiles.size());
+}
+
+/** This function tries to circumvent a problem tile by declaring a diagonal neighbor tile between two of its straight neighbor tiles river.
+ */
+bool RainfallRiverGenerator::MakeDiagonalTileWaterIfPossible(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], TileIndex water_neighbor_tiles[DIR_COUNT],
+														   Direction straight_direction_one, Direction straight_direction_two, Direction diagonal_direction, int *water_flow, byte *water_info,
+														   DefineLakesIterator *define_lakes_iterator,
+														   std::set<TileIndex> &tiles_fixed, std::set<TileIndex> &new_problem_tiles)
+{
+	/* We search for two tiles in straight direction that are water, and the diagonal tile in between being no water.
+	 * The former condition implies that the diagonal tile exists, i.e. checking for INVALID_TILE is equivalent to checking for non-water on an existing tile.
+	 */
+	if (water_neighbor_tiles[straight_direction_one] != INVALID_TILE && water_neighbor_tiles[straight_direction_two] != INVALID_TILE
+			&& water_neighbor_tiles[diagonal_direction] == INVALID_TILE) {
+
+		TileIndex diagonal_tile = AddDirectionToTile(tile, diagonal_direction);
+		Slope slope = GetTileSlope(diagonal_tile);
+		if (IsValidSlopeForRiver(slope)) {
+			/* Diagonal tile has valid slope, simply declare it river */
+
+			DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, ".... Based on tile (%i,%i), straight directions (%s,%s) and diagonal direction %s, making tile (%i,%i) water.",
+						  TileX(tile), TileY(tile), DirectionToString(straight_direction_one), DirectionToString(straight_direction_two), DirectionToString(diagonal_direction),
+						  TileX(diagonal_tile), TileY(diagonal_tile));
+
+			DeclareRiver(water_info, diagonal_tile);
+			MarkProcessed(water_info, diagonal_tile);
+			water_flow[diagonal_tile] = water_flow[tile];
+			return true;
+		} else {
+			/* Diagonal tile has no valid slope, try to terraform it to valid slope, but with some restrictions on what the function may do (see ImproveByTerraforming) */
+			DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, ".... Based on tile (%i,%i), straight directions (%s,%s) and diagonal direction %s, trying to make tile (%i,%i) water by terraforming it.",
+						  TileX(tile), TileY(tile), DirectionToString(straight_direction_one), DirectionToString(straight_direction_two), DirectionToString(diagonal_direction),
+						  TileX(diagonal_tile), TileY(diagonal_tile));
+		    return this->ImproveByTerraforming(diagonal_tile, water_flow[tile], tiles_fixed, new_problem_tiles, water_flow, water_info, define_lakes_iterator, true, true, true);
+		}
+	} else {
+		/* Not possible */
+		return false;
+	}
+}
+
+
+/** Given a two opposite straight neighbor tiles of a tile with invalid slope for rivers, this function
+ *  tries to fix the situation by making all tiles parallel to the line between those neighbor tiles river.
+ *  Example: Tiles ABC
+ *                 1X2
+ *                 CDE
+ *  If you pass straight_direction_one = tile 1, straight_direction_two = tile 2, then it will try to make tiles ABC (derived clockwise) river tiles.
+ */
+bool RainfallRiverGenerator::MakeParallelTilesWaterIfPossible(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], TileIndex water_neighbor_tiles[DIR_COUNT],
+									  Direction straight_direction_one, Direction straight_direction_two, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator,
+									  std::set<TileIndex> &tiles_fixed, std::set<TileIndex> &new_problem_tiles)
+{
+	if (water_neighbor_tiles[straight_direction_one] != INVALID_TILE && water_neighbor_tiles[straight_direction_two] != INVALID_TILE) {
+		Direction curr_direction = GetNextDirection(straight_direction_one);
+		/* The above condition implies that tiles 1 and 2 exist and are water.  But it does not guarantee that the row of tiles ABC exists - we might be at the map edge! */
+		if (neighbor_tiles[curr_direction] != INVALID_TILE) {
+			bool possible = true;
+			bool made_water[3];
+
+			/*  Three steps in three for loops:
+			 *  (1) Make all parallel tiles water, if they are not yet water.  This allows ImproveByTerraforming called below to recognize these tiles
+			 *      as water, when we allow it to only perform terraformings that do not make slopes worse (terraformings can influence each other, i.e. if
+			 *      we allow making tiles worse, then the second terraforming might damage the result of the first one)
+			 *  (2) Terraform if necessary.  Afterwards, either all parallel tiles are water with correct slope, or the whole attempt is recognized as impossible.
+			 *  (3) If possible, adjust flow, if impossible revert the decision to make parallel tiles water from (1).
+			 */
+
+			for (int n = 0; n < 3; n++) {
+				TileIndex curr_tile = neighbor_tiles[curr_direction];
+				made_water[n] = !WasProcessed(water_info, curr_tile);
+				if (made_water[n]) {
+					DeclareRiver(water_info, neighbor_tiles[curr_direction]);
+					MarkProcessed(water_info, neighbor_tiles[curr_direction]);
+				}
+
+				curr_direction = GetNextDirection(curr_direction);
+			}
+
+			curr_direction = GetNextDirection(straight_direction_one);
+			for (int n = 0; n < 3; n++) {
+				TileIndex curr_tile = neighbor_tiles[curr_direction];
+				if (!IsValidSlopeForRiver(GetTileSlope(curr_tile))) {
+					bool result = this->ImproveByTerraforming(curr_tile, water_flow[tile], tiles_fixed, new_problem_tiles, water_flow, water_info, define_lakes_iterator, true, true, false);
+					if (result) {
+						DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, ".... Based on tile (%i,%i) with direction %s, MakeParallelTilesWater continues at (%i,%i) with new slope %s after terraforming.",
+								  TileX(tile), TileY(tile), DirectionToString(curr_direction), TileX(curr_tile), TileY(curr_tile),
+								  SlopeToString(GetTileSlope(neighbor_tiles[curr_direction])));
+					} else {
+						DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, ".... Based on tile (%i,%i) with direction %s, MakeParallelTilesWater stops at (%i,%i) since it has slope %s",
+							  TileX(tile), TileY(tile), DirectionToString(curr_direction), TileX(curr_tile), TileY(curr_tile),
+							  SlopeToString(GetTileSlope(neighbor_tiles[curr_direction])));
+					}
+
+					possible &= result;
+				} else {
+					DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, ".... Based on tile (%i,%i) with direction %s, MakeParallelTilesWater continues at (%i,%i) with slope %s",
+							  TileX(tile), TileY(tile), DirectionToString(curr_direction), TileX(curr_tile), TileY(curr_tile),
+							  SlopeToString(GetTileSlope(neighbor_tiles[curr_direction])));
+				}
+				curr_direction = GetNextDirection(curr_direction);
+			}
+
+			curr_direction = GetNextDirection(straight_direction_one);
+			for (int n = 0; n < 3; n++) {
+				TileIndex curr_tile = neighbor_tiles[curr_direction];
+				if (made_water[n]) {
+					if (possible) {
+						DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, ".... Based on tile (%i,%i) with direction %s, MakeParalleTilesWater declares tile (%i,%i) a river",
+								  TileX(tile), TileY(tile), DirectionToString(curr_direction), TileX(curr_tile), TileY(curr_tile));
+						water_flow[neighbor_tiles[curr_direction]] = water_flow[tile];
+					} else {
+						DeclareNoWater(water_info, curr_tile);
+						MarkNotProcessed(water_info, curr_tile);
+					}
+				}
+				curr_direction = GetNextDirection(curr_direction);
+			}
+			return possible;
+		} else {
+			return false;
+		}
+	} else {
+		return false;
+	}
+}
+
+/** This function tries to find out wether the neighbor tiles in the two given directions, relative to the given tile, are linked by rivers.
+ *  The approach is a very simple deep-search with a (usually tight) upper limit on the search steps.  The aim is e.g. to identify peninsulas,
+ *  where some tile with invalid slope can safely be declared land.
+ *  The deep search starts at the neighbor tile, and tries to step one time clockwise, one time counterclockwise, around the shore.
+ *  To achieve this, it always tries to turn 90 degree right or left relative to the current direction.
+ *  @param tile some tile
+ *  @param water_neighbor_tiles water neighbor tiles
+ *  @param direction_one one of DIR_NW, DIR_NE, DIR_SW, DIR_SE
+ *  @param direction_two one of DIR_NW, DIR_NE, DIR_SW, DIR_SE
+ *  @param water_info the water info array
+ *  @param limit upper limit on the steps.  If the destination tile is not found within that number, the function returns false.
+ *  @return wether we found a water path between those two tiles
+ */
+bool RainfallRiverGenerator::AreTilesLinkedByRiver(TileIndex tile, TileIndex water_neighbor_tiles[DIR_COUNT], Direction direction_one, Direction direction_two, byte *water_info, int limit)
+{
+	TileIndex curr_tile = water_neighbor_tiles[direction_one];
+	TileIndex dest_tile = water_neighbor_tiles[direction_two];
+
+	if (curr_tile == INVALID_TILE || dest_tile == INVALID_TILE) {
+		DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "AreTilesLinkedByRiver aiming for neighbors of tile (%i,%i), direction_one = %s, direction_two = %s answers false since tiles are no water.",
+						  TileX(tile), TileY(tile), DirectionToString(direction_one), DirectionToString(direction_two));
+		return true;
+	}
+
+	for (int direction_offset = -2; direction_offset <= 2; direction_offset += 4) {
+		curr_tile = water_neighbor_tiles[direction_one];
+
+		DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "Starting AreTilesLinkedByRiver at tile (%i,%i), aiming for neighbor (%i,%i) of tile (%i,%i), direction_one = %s, direction_two = %s, direction_offset = %i",
+						  TileX(curr_tile), TileY(curr_tile), TileX(dest_tile), TileY(dest_tile), TileX(tile), TileY(tile), DirectionToString(direction_one), DirectionToString(direction_two),
+						  direction_offset);
+
+		Direction curr_direction = direction_one;
+		int curr_step = 0;
+		while (curr_tile != dest_tile && curr_step < limit) {
+			Direction d = curr_direction;
+
+			/* If curr_direction is e.g. DIR_NW, then our first try might be DIR_NE, if that´s impossible we try DIR_NW, then DIR_SW, finally DIR_SE.  This way,
+			 * our first attempt is 90 degrees right (step around a shore), but the second is straight, and not reverse.  Thus the curr_direction_offset has to flip
+			 * after the first attempt.
+			 */
+			int curr_direction_offset = direction_offset;
+			for (int z = 0; z < 4; z++) {
+				if (curr_direction_offset > 0) {
+					for (int n = 0; n < curr_direction_offset; n++) {
+						d = GetNextDirection(d);
+					}
+				} else {
+					for (int n = 0; n > curr_direction_offset; n--) {
+						d = GetPrevDirection(d);
+					}
+				}
+				curr_direction_offset = -direction_offset;
+				TileIndex test_tile = AddDirectionToTile(curr_tile, d);
+
+				if (test_tile == INVALID_TILE) {
+					break;
+				} else {
+					Slope slope = GetTileSlope(test_tile);
+					if (WasProcessed(water_info, test_tile) && IsValidSlopeForRiver(slope)) {
+						curr_tile = test_tile;
+						curr_direction = d;
+						DEBUG(map, 9, "........ At tile (%i,%i), curr_direction %s.", TileX(curr_tile), TileY(curr_tile), DirectionToString(curr_direction));
+						break;
+					}
+				}
+			}
+			curr_step++;
+		}
+
+		if (curr_tile == dest_tile) {
+			DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "........ Found dest_tile, success.");
+			return true;
+		}
+	}
+
+	DEBUG(map, RAINFALL_MOVE_WATER_LOG_LEVEL, "........ Did not found dest_tile, failure.");
+	return false;
+}
+
 /* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
+
+/** Returns wether the given corner direction in the given neighbor tiles array marks an isolated corner, i.e. one which has no corresponding
+ *  straight neighbor tile.
+ */
+bool RainfallRiverGenerator::IsIsolatedCorner(TileIndex neighbor_tiles[DIR_COUNT], Direction corner_direction, Direction adjacent_direction_one, Direction adjacent_direction_two)
+{
+	return neighbor_tiles[corner_direction] != INVALID_TILE
+		&& neighbor_tiles[adjacent_direction_one] == INVALID_TILE
+		&& neighbor_tiles[adjacent_direction_two] == INVALID_TILE;
+}
+
 
 /** Stores all neighbor tiles of the given tile, that are planned as water, in the given direction-indexed array of neighbor tiles.
  */
@@ -3623,6 +3980,7 @@ void RainfallRiverGenerator::StoreNeighborTilesPlannedForWater(TileIndex tile, T
 		}
 	}
 }
+
 
 /** Based on the situation on the tiles around, this function determines wether a tile can be transformed to an inclined slope of some direction
  *  in terms of water flow around.
@@ -4018,6 +4376,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  *  (8) Generate wider rivers and valleys.
  *  (9) Find problem tiles, i.e. tiles whose slope is not suitable for becoming river.
  * (10) Try to fix them using terraforming on the small scale.  Do (among a number of possible actions) what fixes most problem tiles.
+ * (11) Try to fix them by moving them, or by declaring them no water if they are not necessary for keeping the river connected.
  * (12) Lower tiles with not yet valid slope, until they are suitable for river.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
@@ -4090,6 +4449,9 @@ void RainfallRiverGenerator::GenerateRivers()
 	 *      out of a number of schemes for the slope at hand, that fixes most river tiles with invalid slope.
 	 */
 	this->FixByLocalTerraforming(problem_tiles, water_flow, water_info, define_lakes_iterator);
+
+	/* (11) Try to fix them by moving them, or by declaring them no water if they are not necessary for keeping the river connected. */
+	this->FixByMovingProblemTiles(problem_tiles, water_flow, water_info, define_lakes_iterator);
 
 	/* (12) The above algorithms worked rather heuristic.  They cannot guarantee that any planned river tile actually has
      *      correct slope (i.e., flat or inclined).  Thus, here we lower tiles until everything is ok.
