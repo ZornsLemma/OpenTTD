@@ -2467,19 +2467,30 @@ void RainfallRiverGenerator::PrepareLake(TileIndex tile, int *water_flow, byte *
 		}
 	}
 
+	/* Set of discarded lake tiles, will be filled by LakeModificators. */
+	std::set<TileIndex> discarded_lake_tiles = std::set<TileIndex>();
+
 	/* Terraform all lake tiles to the surface height of the lake and perform some final bookkeeping. */
 	int surface_height = lake->GetSurfaceHeight();
+	lake_tiles = lake->GetLakeTiles();
 	DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Will terraform lake (%i,%i) to surface height %i", TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()), surface_height);
 	DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, "Will terraform lake (%i,%i) with " PRINTF_SIZE " lake tiles to height %i",
 			  TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()), lake_tiles->size(), surface_height);
 	for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
 		TileIndex lake_tile = *it;
 		TerraformTileToSlope(lake_tile, surface_height, SLOPE_FLAT);
-		extra_water_tiles.push_back(TileWithValue(lake_tile, water_flow[tile]));
+
 
 		DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, ".... Terraformed tile (%i,%i) to height %i", TileX(lake_tile), TileY(lake_tile), surface_height);
 
-		MarkProcessed(water_info, lake_tile);
+		/* Make guaranteed lake tiles water without any further condition.  If not guaranteed, discarded lake tiles will not become water under any
+	     * circumstances.  Furthermore, not-guaranteed lake tiles may not be higher than the surface height.
+		 */
+		if (guaranteed_water_tiles.find(lake_tile) != guaranteed_water_tiles.end() || discarded_lake_tiles.find(lake_tile) == discarded_lake_tiles.end()) {
+			extra_water_tiles.push_back(TileWithValue(lake_tile, water_flow[tile]));
+			water_flow[lake_tile] = water_flow[tile];
+			MarkProcessed(water_info, lake_tile);
+		}
 	}
 }
 

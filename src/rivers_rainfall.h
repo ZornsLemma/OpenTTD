@@ -925,6 +925,48 @@ struct TileWithTerraformerState {
 									terraformer_state(terraformer_state), processed_tiles(processed_tiles) {}
 };
 
+/** LakeModificators are called from RainfallRiverGenerator::PrepareLake, and have the task of making lakes nicer,
+ *  before their tiles are actually declared water.  For details, see the extensive comment of function ModifyLake.
+ */
+struct LakeModificator {
+
+public:
+	virtual ~LakeModificator() {}
+
+	/** Implementations of this function adapt a lake in some way.  They get a Lake, and some additional data about it,
+	 *  and may modify it in some way.  In detail, the function receives a set of guaranteed lake tiles.
+	 *
+	 *  All lake tiles not being member of that set may be discarded (by adding them to the respective set).  This allows
+	 *  for shrinking the lake (e.g. to gain more usable space in flat valleys), but at the same time ensures that the
+	 *  rivers around the lake stay connected.  Lake tiles being registered in the lake, but marked as discarded will
+	 *  nevertheless be terraformed to the surface height of the lake, in order to avoid ugly dry basins next to a lake.
+	 *
+	 *  The surface height of a lake may not be increased (as doing so might damage the landscape next to a lake in a
+	 *  not-river-compatible way).  The surface height may however be decreased as long as the LakeModificator ensures
+	 *  by terraforming that the water doesn´t need to flow upwards to escape the lake, *and* the surface height is still
+     *  greater or equal the surface height of a lake the water of the lake flows to.
+	 *
+	 *  After all lake modificators have run, all remaining lake tiles (discarded or not) which are lower than the surface
+	 *  height will be terraformed to the surface height.  Lake tiles that are higher than the surface height (can happen
+	 *  if the surface height was decreased) will not be touched with respect to terraforming, and will be discarded
+	 *  afterwards, unless they are declared guaranteed lake tiles.
+	 *
+	 *  The latter on the one hand ensures that the rivers around the lake stay connected, while on the other hand, ugly
+	 *  water tiles ascending next to the lake are avoided.
+	 *
+	 *  @param lake some lake; its surface height may be modified within the bounds described above, all other properties
+	 *              must not be modified.
+     *  @param inflow_tile_to_center map from inflow tiles of the lake, to the corresponding center tiles inside the lake where the flow
+	 *                               ends.  May not be modified.
+     *  @param guaranteed_water_tiles The set of tiles of the lake, that must stay lake tiles (in order to keep rivers connected).
+	 *                      May not be modified.
+     *  @param discarded_lake_tiles Set of lake tiles that are discarded, i.e. they are subject to terraforming within the
+	 *                              bounds described above, but will not be declared water.
+	 */
+	virtual void ModifyLake(Lake *lake, std::map<TileIndex, TileIndex> &inflow_tile_to_center, std::set<TileIndex> &guaranteed_water_tiles,
+							std::set<TileIndex> &discarded_lake_tiles) = 0;
+};
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,
