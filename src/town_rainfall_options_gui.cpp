@@ -154,6 +154,7 @@ struct TownPlacerEditWindow : Window {
 	int town_placer_index;
 	std::vector<TownPlacer*> town_placers;
 	std::map<int, PlacerWithParameter> widget_id_to_placer_info;
+	std::map<int, int> placer_index_to_first_widget_id;
 
 	static const int MAX_EDITBOX_LENGTH = 10;
 
@@ -166,9 +167,16 @@ struct TownPlacerEditWindow : Window {
 		this->town_placer_index = -1;
 		this->parent = parent;
 		this->widget_id_to_placer_info = std::map<int, PlacerWithParameter>();
+		this->placer_index_to_first_widget_id = std::map<int, int>();
 
 		int curr_widget_index = WID_TPE_END;
 		this->querystrings[WID_TPE_WEIGHT_TEXTBOX] = new QueryString(MAX_EDITBOX_LENGTH * MAX_CHAR_LENGTH, MAX_EDITBOX_LENGTH);
+		this->querystrings[WID_TPE_WEIGHT_TEXTBOX]->text.afilter = CS_NUMERAL;
+
+		if (this->config.weight >= 0) {
+			SetDParam(0, this->config.weight);
+			this->querystrings[WID_TPE_WEIGHT_TEXTBOX]->SetString(STR_JUST_INT);
+		}
 
 		/*  Fetch all town placers.  Due to C++ (in)capabilities (or at least, I didn´t found a better way), they come as
 	     *  newly created objects, and this code is responsible to delete them once they aren´t needed any longer.  This
@@ -190,8 +198,24 @@ struct TownPlacerEditWindow : Window {
 			TownPlacer *town_placer = this->town_placers[n];
 			std::map<int, TownPlacerParameter> parameters = town_placer->GetParameters();
 			for (std::map<int, TownPlacerParameter>::const_iterator it2 = parameters.begin(); it2 != parameters.end(); it2++) {
-				this->widget_id_to_placer_info[curr_widget_index] = PlacerWithParameter(town_placer, it2->first);
+				int parameter_index = it2->first;
+				TownPlacerParameter parameter = it2->second;
+				this->widget_id_to_placer_info[curr_widget_index] = PlacerWithParameter(town_placer, parameter_index);
 				this->querystrings[curr_widget_index] = new QueryString(MAX_EDITBOX_LENGTH * MAX_CHAR_LENGTH, MAX_EDITBOX_LENGTH);
+				this->querystrings[curr_widget_index]->text.afilter = CS_NUMERAL;
+
+				if (it2 == parameters.begin()) {
+					placer_index_to_first_widget_id[n] = curr_widget_index;
+				}
+
+				if (this->config.parameter_map.find(parameter_index) != this->config.parameter_map.end()) {
+					int desired_value = this->config.parameter_map[parameter_index]);
+
+					if (desired_value >= parameter->GetMinValue() && desired_value <= parameter->GetMaxValue()) {
+						SetDParam(0, desired_value);
+						this->querystrings[curr_widget_index]->SetString(STR_JUST_INT);
+					}
+				}
 
 				curr_widget_index++;
 			}
@@ -207,7 +231,7 @@ struct TownPlacerEditWindow : Window {
 		}
 
 		this->InitNested(window_number);
-		this->OnTownPlacerSelected();
+		this->OnTownPlacerSelected(false);
 	}
 
 	~TownPlacerEditWindow()
@@ -233,13 +257,26 @@ struct TownPlacerEditWindow : Window {
 		}
 	}
 
-	void OnTownPlacerSelected()
+	void OnTownPlacerSelected(bool set_parameter_default_values)
 	{
 		if (this->town_placer_index >= 0) {
 	  		NWidgetStacked *label_selection = this->GetWidget<NWidgetStacked>(WID_TPE_PARAM_LABEL_SELECTION);
 	  		NWidgetStacked *widget_selection = this->GetWidget<NWidgetStacked>(WID_TPE_PARAM_WIDGET_SELECTION);
 			label_selection->SetDisplayedPlane(this->town_placer_index);
 			widget_selection->SetDisplayedPlane(this->town_placer_index);
+
+			if (set_parameter_default_values) {
+				TownPlacer *placer = this->town_placers[town_placer_index];
+				int widget_offset = 0;
+				std::map<int, TownPlacerParameter> parameters = placer->GetParameters();
+				for (std::map<int, TownPlacerParameter>::const_iterator it2 = parameters.begin(); it2 != parameters.end(); it2++) {
+					TownPlacerParameter parameter = it2->second;
+					int querystring_index = placer_index_to_first_widget_id[this->town_placer_index] + widget_offset;
+					SetDParam(0, parameter.GetDefaultValue());
+					this->querystrings[querystring_index]->SetString(STR_JUST_INT);
+					widget_offset++;
+				}
+			}
 		}
 	}
 
@@ -248,7 +285,7 @@ struct TownPlacerEditWindow : Window {
 		switch (widget) {
 			case WID_TPE_TOWN_PLACER_DROPDOWN:
 				this->town_placer_index = index;
-				this->OnTownPlacerSelected();
+				this->OnTownPlacerSelected(true);
 
 				this->SetDirty();
 //				StringID description = this->town_placers[this->town_placer_index]->GetDescription();
