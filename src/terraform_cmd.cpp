@@ -409,7 +409,6 @@ CommandCost CmdTerraformLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uin
 	}
 
 	if (flags & DC_EXEC) {
-		/* SFTODO: Merge conflict here, may not be resolved correctly */
 		/* Mark affected areas dirty. */
 		for (TileIndexSet::const_iterator it = ts.dirty_tiles.begin(); it != ts.dirty_tiles.end(); it++) {
 			MarkTileDirtyByTile(*it);
