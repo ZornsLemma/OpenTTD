@@ -120,7 +120,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_FINETUNE_TILES_FULL_LOG_LEVEL 9
 #define RAINFALL_FLOW_MODIFICATION_LOG_LEVEL 9
 #define RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL 9
-#define RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL 0
+#define RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -898,6 +898,19 @@ public:
 	inline void SetWaterInfo(TileIndex tile, byte value) { this->water_info[tile] = value; }
 };
 
+/* Helper class to place both (desired) height and flow of a tile in a map.
+ */
+struct HeightAndFlow {
+	int height;
+	int flow;
+
+	/** Default constructor, to make it usable as value in a std::map.
+	 */
+	HeightAndFlow() {}
+
+	HeightAndFlow(int height, int flow) { this->height = height; this->flow = flow; }
+};
+
 /** Helper class for sorting tiles appropriately for potential terraforming.
  */
 struct TileWithHeightAndFlow {
@@ -1027,6 +1040,7 @@ private:
 	int GetNumberOfAscendedSlopes(Slope slope);
 	void DeclareNeighborTileWater(TileIndex water_neighbor_tiles[DIR_COUNT], TileIndex neighbor_tiles[DIR_COUNT], bool add_tile, Direction direction);
 	void SetExtraNeighborTilesProcessed(TileIndex water_neighbor_tiles[DIR_COUNT], byte *water_info, std::vector<TileWithValue> &extra_river_tiles, bool add_tile, Direction direction, int flow);
+	void UpdateFlow(int *water_flow, std::vector<TileWithHeightAndFlow> &water_tiles);
 
 	void ModifyFlow(int *water_flow, byte *water_info);
 
@@ -1055,6 +1069,14 @@ private:
 	void LowerTileForDiagonalWater(std::set<TileIndex> &problem_tiles, TileIndex tile, byte *water_info, int x_offset, int y_offset, std::set<TileIndex> &affected_tiles);
 	void LowerHigherWaterTilesUntilValid(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
 	void FineTuneTilesForWater(int *water_flow, byte *water_info, std::vector<TileWithHeightAndFlow> &water_tiles, DefineLakesIterator *define_lakes_iterator);
+
+	void MakeRiverTileWiderStraight(bool river, bool valley,
+									TileIndex tile, int base_flow, int dx, int dy, int desired_width, int desired_height, Slope desired_slope, int number_of_alternatives, int *water_flow, byte *water_info,
+									DefineLakesIterator *define_lakes_iterator, std::map<TileIndex, HeightAndFlow> &additional_water_tiles);
+	void MakeRiversWiderByDirection(bool river, bool valley, TileIndex tile, Direction direction, int reached_bound, int height, Slope slope, int *water_flow, byte *water_info,
+								    DefineLakesIterator *define_lakes_iterator, std::map<TileIndex, HeightAndFlow> &additional_water_tiles);
+	void DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles);
+	void GenerateWiderRivers(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles);
 
 public:
 	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);

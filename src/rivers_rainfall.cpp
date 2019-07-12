@@ -29,6 +29,7 @@
 #include "rivers_rainfall.h"
 
 #include <algorithm>
+#include <math.h>
 #include <vector>
 
 #include "safeguards.h"
@@ -2230,6 +2231,27 @@ void RainfallRiverGenerator::SetExtraNeighborTilesProcessed(TileIndex water_neig
 	}
 }
 
+
+void RainfallRiverGenerator::UpdateFlow(int *water_flow, std::vector<TileWithHeightAndFlow> &water_tiles)
+{
+	/*  Above, the concept of flow was used to decide where rivers and lakes should be placed.
+	 *  However, so far in the water_flow array, only for active lake centers, and for the central tiles of rivers, the correct flow
+	 *  values are recorded.  The river tiles that were added to rivers when making rivers wider e.g. still have their originally, usually
+	 *  much smaller, flow.
+	 *  Below, FineTuneTilesForWater relies on correct flow values for all water tiles, to prevent situations were water flows upwards.
+	 *  (specifically, an inclined river slope may not lead from a lower tile with smaller flow, to a higher tile with bigger flow).
+	 *  Thus, here we modify the water_flow array such that artificial flow values recorded during lake generation and wider river generation
+	 *  are added to the array.
+	 */
+	for (std::vector<TileWithHeightAndFlow>::const_iterator it = water_tiles.begin(); it != water_tiles.end(); it++) {
+		TileWithHeightAndFlow water_tile = *it;
+		TileIndex tile = water_tile.tile;
+		int flow = water_tile.flow;
+
+		water_flow[tile] = max(water_flow[tile], flow);
+	}
+}
+
 /* ========================================================= */
 /* ================ Flow modification ====================== */
 /* ========================================================= */
@@ -2260,6 +2282,310 @@ int RainfallRiverGenerator::GetWideRiverBoundForFlow(int flow)
 		reached_bound++;
 	}
 	return reached_bound;
+}
+
+/** This function makes a river wider at one particular tile, and at the same time generates a wider valley at this point if the configuration suggests doing this.
+ *
+ *  Both for wider rivers and for wider valleys we use a scheme, where in an alternating manner tiles at both sides of the rivers are chosen and processed.
+ *  E.g., if you have tiles 000T000 (with T being the start tile, 0 being neighbor tiles along some axis, 1 being processed tiles), then we might process tiles in
+ *  the following order: 001T000, 001T100, 011T100, 011T110, 111T110, 111T111.
+ *
+ *  Technically, the function receives a tuple (dx, dy), where either dx or dy must be zero, and starts by applying the component that is not zero to the respective
+ *  coordinate of TileX / TileY.
+ *
+ *  Wider rivers and valleys are produced in the same loop of the above scheme.  First, we choose tiles according to the river width, and all later iterations of
+ *  the tile choosing loop make the valley wider.  The latter works by maintaining a current height offset, which is increased in a probabilistic manner to
+ *  get not too regular looking valleys.  That probabilistic scheme works as follow:  In the first step, increase height with probability 1 / desired_valley_width,
+ *  in the second step with probability 2 / desired_valley_width, and so on until the whole desired valley width is processed.  This might lead to a scheme like,
+ *  river tile has height 8, extra valley tiles have height 8,8,9,10,10,11, i.e. we let the terrain ascend towards the slope of the valley, and ascending is the
+ *  more probable the farer we are away from the river.
+ *
+ *  With respect to wider rivers, the default behaviour is to simply ignore tiles that cannot be made a river (as they are already one, or are sea tiles), but
+ *  if number_of_alternatives > 0 are given, the function will instead try to choose another tile according to the algorithm described above, until the number
+ *  of alternatives are exhausted.  This is for avoiding situations, where a wide river flows along a map edge, and suddendly becomes quite small just because
+ *  the first chosen tile would be outside the map.
+ *
+ *  @param tile the water tile
+ *  @param dx size of first step in x direction, if not zero, it should be 1 or -1, and if not zero, dy must be zero
+ *  @param dy size of first step in y direction, if not zero, it should be 1 or -1, and if not zero, dx must be zero
+ *  @param desired_width desired width of the river
+ *  @param desired_height desired height of the river
+ *  @param desired_slope desired slope of the river
+ *  @param number_of_alternatives number of extra tries if a tile is not suitable for water, until we give up.
+ *  @param water_info water info
+ *  @param additional_water_tiles map from tile index to desired height, record additional water tiles here, instead of terraforming them immediately (doing so might disturb
+ *                                the calling algorithm, as the same tile may be subject to this function multiple times with different directions, caused by different neighbor
+ *                                tiles
+ */
+void RainfallRiverGenerator::MakeRiverTileWiderStraight(bool river, bool valley,
+														TileIndex tile, int base_flow, int dx, int dy, int desired_width, int desired_height, Slope desired_slope, int number_of_alternatives,
+														int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::map<TileIndex, HeightAndFlow> &additional_water_tiles)
+{
+	assert(dx == 0 || dy == 0);
+
+	DEBUG(map, 9, ".. Calling MakeRiverTileWiderStraight with dx = %i, dy = %i, desired_width = %i, number_of_alternatives = %i",
+			  dx, dy, desired_width, number_of_alternatives);
+
+	int x = TileX(tile);
+	int y = TileY(tile);
+	int tile_height = GetTileZ(tile);
+
+	/* The number of extra valley tiles at each side of the river */
+	int number_of_extra_valley_tiles = _settings_newgame.game_creation.rainfall.wider_valleys_multiplier > 0
+											  ? RandomRange(_settings_newgame.game_creation.rainfall.wider_valleys_multiplier * desired_width) : 0;
+
+	/* Currently, we generate extra valley tiles with height <river height> plus this offset */
+	int curr_height_offset = 0;
+
+	/* Both wider rivers, and wider valleys in the same loop */
+	for (int n = 1; n < desired_width + 2 * number_of_extra_valley_tiles; n++) {
+		int offset = (n - 1) % 2;
+
+		if (x + dx > 0 && y + dy > 0 && x + dx < (int)MapSizeX() - 1 && y + dy < (int)MapSizeY() - 1) {
+			TileIndex candidate_tile = TileXY(x + dx, y + dy);
+			if (!IsTileType(candidate_tile, MP_WATER) || IsCoastTile(candidate_tile)) {
+				/* n < desired_widht: Tiles can be declared water.  n >= desired_width: Tile can be terraformed to valley height as described above */
+
+				/* Case distinction between generating wider rivers, or wider valleys */
+				if (river && n < desired_width) {
+					if (WasProcessed(water_info, candidate_tile)) {
+						water_flow[candidate_tile] = max(water_flow[candidate_tile], base_flow);
+					} else {
+						/* Propagate type of tile */
+						if ((IsOrdinaryLakeTile(water_info, tile) || IsLakeCenter(water_info, tile)) && WasProcessed(water_info, tile)) {
+							Lake *parent_lake = define_lakes_iterator->GetLake(tile);
+							DeclareOrdinaryLakeTile(water_info, candidate_tile);
+							parent_lake->AddLakeTile(candidate_tile);
+							if (parent_lake != NULL) {
+								define_lakes_iterator->RegisterLakeTile(candidate_tile, parent_lake);
+							} else {
+								DEBUG(misc, 0, "WARNING: No lake registered for lake tile (%i,%i)", TileX(tile), TileY(tile));
+							}
+						} else {
+							/* If tile is an unprocessed lake center (i.e. with too small flow), we also end in the river case. */
+							DeclareRiver(water_info, candidate_tile);
+						}
+						MarkProcessed(water_info, candidate_tile);
+
+						DEBUG(map, 9, ".... Declared tile (%i,%i) a wider river tile", TileX(candidate_tile), TileY(candidate_tile));
+
+						if (additional_water_tiles.find(candidate_tile) != additional_water_tiles.end()) {
+							HeightAndFlow old_state = additional_water_tiles[candidate_tile];
+							additional_water_tiles.erase(candidate_tile);
+							additional_water_tiles[candidate_tile] = HeightAndFlow(max(old_state.height, tile_height), max(old_state.flow, base_flow));
+
+							if (old_state.height < tile_height) {
+								DEBUG(map, 9, ".... Increased desired height of tile (%i,%i) from %i to %i, based on tile (%i,%i), flow %i",
+										TileX(candidate_tile), TileY(candidate_tile), old_state.height, max(old_state.height, tile_height), TileX(tile), TileY(tile), base_flow);
+							}
+						} else {
+							additional_water_tiles[candidate_tile] = HeightAndFlow(tile_height, base_flow);
+							DEBUG(map, 9, ".... Registered desired height of tile (%i,%i) as %i, based on tile (%i,%i), flow %i",
+										TileX(candidate_tile), TileY(candidate_tile), tile_height, TileX(tile), TileY(tile), base_flow);
+						}
+					}
+				}
+				if (valley && n >= desired_width && !IsTileType(candidate_tile, MP_WATER)) {
+					/* Terraform tile for wider valley, but only if it is higher, we don´t want to accidentally raise terrain */
+					if (GetTileZ(candidate_tile) > tile_height + curr_height_offset) {
+						TerraformerState terraformer_state;
+						int h = tile_height + curr_height_offset;
+						bool success = SimulateTerraformTileToSlope(candidate_tile, h, SLOPE_FLAT, terraformer_state);
+						if (success) {
+							bool veto = false;
+							for (TileIndexToHeightMap::const_iterator it = terraformer_state.tile_to_new_height.begin(); it != terraformer_state.tile_to_new_height.end(); it++) {
+								TileIndex affected_tile = it->first;
+
+								if ((IsRiver(water_info, affected_tile) && water_flow[affected_tile] > water_flow[tile] / 2)
+									|| IsOrdinaryLakeTile(water_info, affected_tile) || IsLakeCenter(water_info, affected_tile)) {
+									veto = true;
+								}
+							}
+							if (!veto) {
+								DEBUG(map, RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL, "Terraforming tile (%i,%i) to height %i while widening valleys, base tile (%i,%i) with height %i",
+																					TileX(candidate_tile), TileY(candidate_tile), tile_height + curr_height_offset, TileX(tile), TileY(tile), tile_height);
+								ExecuteTerraforming(terraformer_state);
+							}
+						}
+					}
+				}
+			} else {
+				DEBUG(map, 9, ".... Ignoring tile (%i,%i) since it is already water or sea", TileX(candidate_tile), TileY(candidate_tile));
+				if (number_of_alternatives > 0) {
+					n--;
+					number_of_alternatives--;
+				}
+			}
+		}
+
+		DEBUG(map, 9, ".... dx = %i, dy = %i, offset = %i", dx, dy, offset);
+		if (dx == 0) {
+			/* Add tiles alternately: If we start with dy = -1, add: y - 1 in step n == 1, y + 1 in step n == 2, y - 2 in
+			 * step n == 3, and so on.
+			 */
+			dy = (dy < 0 ? -dy + offset : -dy - offset);
+			DEBUG(map, 9, ".... case dx == 0, now dy = %i", dy);
+		} else {
+			dx = (dx < 0 ? -dx + offset : -dx - offset);
+			DEBUG(map, 9, ".... case dy == 0, now dx = %i", dx);
+		}
+
+		/* Increase height offset with probability <current extra valley tile> / <number of extra valley tiles> */
+		int valley_offset = n - desired_width >= 0 ? n - desired_width / 2 : -1;
+		if (valley_offset >= 0) {
+			curr_height_offset += ((valley_offset * 1000) / number_of_extra_valley_tiles < (int)RandomRange(1000) ? 1 : 0);
+		}
+	}
+}
+
+/** This function tries to make a river or a guaranteed lake path wider at the given tile, assuming that flow has the given direction.
+ *  Depending on the direction, it trys some neighbor tiles.
+ */
+void RainfallRiverGenerator::MakeRiversWiderByDirection(bool river, bool valley, TileIndex tile, Direction direction,
+														int reached_bound, int height, Slope slope, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, 
+														std::map<TileIndex, HeightAndFlow> &additional_water_tiles)
+{
+	uint x = TileX(tile);
+	uint y = TileY(tile);
+	int base_flow = water_flow[tile];
+
+	/* We aim to declare tiles orthogonal to the flow direction river tiles.  For straight flow this is easy, however for
+	 * diagonal flow we need to try some more tiles in the neighborhood in order to be sure that we choose additional tiles.
+	 */
+	switch (direction) {
+		case DIR_S:
+			if (x < MapMaxX() - 1) {
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x + 1, y), base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			}
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			break;
+		case DIR_SE: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+
+		case DIR_E:
+			if (y < MapMaxX() - 1) {
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x, y + 1), base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			}
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			break;
+
+		case DIR_NE: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow,0, 1, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+
+		case DIR_N:
+			if (x > 1) {
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x - 1, y), base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			}
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, 1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			break;
+
+		case DIR_NW: this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+
+		case DIR_W:
+			if (y > 1) {
+				this->MakeRiverTileWiderStraight(river, valley, TileXY(x, y - 1), base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			}
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, -1, 0, reached_bound, height, slope, 1, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			break;
+
+		case DIR_SW : this->MakeRiverTileWiderStraight(river, valley, tile, base_flow, 0, -1, reached_bound, height, slope, 0, water_flow, water_info, define_lakes_iterator, additional_water_tiles); break;
+		default: NOT_REACHED();
+	}
+}
+
+/** This function aims at making rivers with huge flow wider.  The background is just: The Amazonas is a bit wider than the small
+ *  river in your backyard.
+ *
+ *  The width of a river as generated by this function is a logarithmic function of its flow.  For this purpose, in the settings
+ *  a multiplier is defined which is iteratively multiplied with the water flow necessary to form a river at all.
+ *  Example: If the water flow necessary for a river is 300, and the multiplier is ten, then rivers with flow greater than 3000
+ *  will be made two tiles wide by this function, rivers with flow greater than 30000 three tiles wide, and so on.
+ *
+ *  By using such a logarithmic approach, the danger that a river with huge flow exceeds all bounds and becomes maybe some dozens
+ *  of tiles wide doesn´t exist.
+ *
+ *  @param water_flow the water flow as calculated before
+ *  @param water_info the status information (where are rivers, flow direction, etc.) as calculated before
+ *  @param water_tiles the tiles declared water so far, this function will only inspect such tiles
+ */
+void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles)
+{
+	std::map<TileIndex, HeightAndFlow> additional_water_tiles = std::map<TileIndex, HeightAndFlow>();
+	for (int n = 0; n < (int)water_tiles.size(); n++) {
+		TileIndex tile = water_tiles[n].tile;
+
+		/* Determine the width the flow of the current tile is sufficient for */
+		int reached_bound = this->GetWideRiverBoundForFlow(water_flow[tile]);
+
+		/* We have to do something with this river tile, if it either needs to become width > 1 (rivers with width == 1 are already
+		 * calculated completely at this point), or we need to generate a wider valley.
+		 */
+		if (reached_bound > 1 || _settings_newgame.game_creation.rainfall.wider_valleys_enabled > 0) {
+			int height;
+			Slope slope = GetTileSlope(tile, &height);
+
+			if (   (IsOrdinaryLakeTile(water_info, tile) || IsLakeCenter(water_info, tile))
+				&&  IsGuaranteed(water_info, tile)) {
+				/* Guaranteed lake tiles: Also process them, to avoid paths of guaranteed lake tiles being the smallest parts of a whole river.
+				 * This can happen especially if lakes are reduced to their guaranteed tiles using the settings
+				 */
+
+				/* Lake tiles don´t have reliable flow direction information, as paths of guaranteed lake tiles are calculated
+				 * without any regard to flow directions.  Thus, inspect all neighbor tiles, filter for those that are also guaranteed
+				 * and have sufficient flow, calculate the directions to those neighbor tiles, and then work as if it was a river
+				 * with that direction.
+				 */
+				TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+				StoreAllNeighborTiles(tile, neighbor_tiles);
+				for (int n = DIR_BEGIN; n < DIR_END; n++) {
+					if (neighbor_tiles[n] != INVALID_TILE && IsGuaranteed(water_info, neighbor_tiles[n]) && water_flow[neighbor_tiles[n]] >= this->GetFlowNeededForWideRiverBound(reached_bound)) {
+						Direction direction = GetDirection(tile, neighbor_tiles[n]);
+						DEBUG(map, 9, "Making lake guaranteed path from (%i,%i) to (%i,%i) with direction %s wider; it will receive width %i for flow %i",
+										  TileX(tile), TileY(tile), TileX(neighbor_tiles[n]), TileY(neighbor_tiles[n]), DirectionToString(direction), reached_bound, water_flow[tile]);
+						this->MakeRiversWiderByDirection(river, valley, tile, direction, reached_bound, height, slope, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+					}
+				}
+			} else {
+				/* The river case */
+
+				DEBUG(map, 9, "River at (%i,%i) will receive width %i for flow %i", TileX(tile), TileY(tile), reached_bound, water_flow[tile]);
+
+				/* We have to have a look on the direction of the river.  Do our very best to choose the tiles near the river that
+			     * give the impression of a wide river when being declared river tiles.
+				 * Note that we always choose tiles at the same side of the river (e.g., in direction north-west to south-east, we always choose the south-west tile
+				 * for width 2), as the player cannot see anyway which river tile was the original one.
+				 */
+				Direction direction = GetFlowDirection(water_info, tile);
+				this->MakeRiversWiderByDirection(river, valley, tile, direction, reached_bound, height, slope, water_flow, water_info, define_lakes_iterator, additional_water_tiles);
+			}
+		}
+	}
+
+	for (std::map<TileIndex, HeightAndFlow>::const_iterator it = additional_water_tiles.begin(); it != additional_water_tiles.end(); it++) {
+		TileIndex curr_tile = it->first;
+		int desired_height = it->second.height;
+		int flow = it->second.flow;
+
+		TerraformTileToSlope(curr_tile, desired_height, SLOPE_FLAT);
+		water_tiles.push_back(TileWithHeightAndFlow(curr_tile, 0, flow));
+
+		DEBUG(map, RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL, "Terraformed tile (%i,%i) to height %i with flow %i while making rivers wider", TileX(curr_tile), TileY(curr_tile), desired_height, flow);
+	}
+}
+
+void RainfallRiverGenerator::GenerateWiderRivers(int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithHeightAndFlow> &water_tiles)
+{
+	/* If configured, generate wider rivers or valleys.  The scheme for aquiring the affected tiles is the same
+	 * in both cases.
+	 */
+	if (_settings_newgame.game_creation.rainfall.wider_rivers_enabled > 0) {
+		this->DoGenerateWiderRivers(true, false, water_flow, water_info, define_lakes_iterator, water_tiles);
+	}
+	if (_settings_newgame.game_creation.rainfall.wider_valleys_enabled > 0) {
+		this->DoGenerateWiderRivers(false, true, water_flow, water_info, define_lakes_iterator, water_tiles);
+	}
 }
 
 /* ========================================================= */
@@ -3321,6 +3647,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  *  (5) Modify flow paths, to make the result look like rivers with curves and corners, and not like straight channels.
  *  (6) Define lakes, i.e. decide which lake covers which tiles, and decide about the lake surface height.
  *  (7) Prepare rivers and lakes.  Add additional corner tiles to rivers, if flow is diagonal.  Terraform to lake surface height.
+ *  (8) Generate wider rivers and valleys.
  * (12) Lower tiles with not yet valid slope, until they are suitable for river.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
@@ -3378,6 +3705,12 @@ void RainfallRiverGenerator::GenerateRivers()
 	this->DeterminePlannedWaterTiles(water_tiles, water_flow, water_info, define_lakes_iterator);
 	this->PrepareRiversAndLakes(water_tiles, water_flow, water_info, define_lakes_iterator, extra_river_tiles);
 	this->AddExtraRiverTilesToWaterTiles(water_tiles, extra_river_tiles);
+
+	/* (8) If flow exceeds certain flow bounds, optionally generate a wide river.  Using the same algorithm,
+	 *     optionally make valleys wider, to gain more space.
+	 */
+	this->GenerateWiderRivers(water_flow, water_info, define_lakes_iterator, water_tiles);
+	this->UpdateFlow(water_flow, water_tiles);
 
 	/* (12) The above algorithms worked rather heuristic.  They cannot guarantee that any planned river tile actually has
      *      correct slope (i.e., flat or inclined).  Thus, here we lower tiles until everything is ok.
