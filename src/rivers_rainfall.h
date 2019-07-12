@@ -121,6 +121,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_FLOW_MODIFICATION_LOG_LEVEL 9
 #define RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL 9
 #define RAINFALL_DISCARDED_LAKE_REGION_LOG_LEVEL 9
+#define RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -1011,6 +1012,52 @@ inline int ValleyGridX(ValleyGridIndex c) { return c % (MapSizeX() / VALLEY_GRID
 inline int ValleyGridY(ValleyGridIndex c) { return c / (MapSizeX() / VALLEY_GRID_SIZE); }
 inline int GetNumberOfValleyGrids() { return (MapSizeX() * MapSizeY()) / (VALLEY_GRID_SIZE * VALLEY_GRID_SIZE); }
 
+/** A pattern for a local terraform operation.  It specifies, to which slope and which height (relative to the current height) some given
+ *  tile should be performed.  Optionally, a (dx,dy) delta for jumping to another tile to be terraformed (instead of the given tile) can
+ *  be given.  In that case, the base height will be taken from the given tile, not from the calculated and terraformed tile.
+ */
+struct TerraformingScheme {
+	Slope slope;
+	int delta_height;
+	int dx;
+	int dy;
+
+	TerraformingScheme() {}
+	TerraformingScheme(Slope slope, int delta_height) { this->slope = slope; this->delta_height = delta_height; dx = 0; dy = 0; }
+	TerraformingScheme(Slope slope, int delta_height, int dx, int dy) { this->slope = slope; this->delta_height = delta_height; this->dx = dx; this->dy = dy; }
+};
+
+/** Information about a local terraform operation, that was already evaluated, but not yet performed.
+ */
+struct TerraformingAction {
+	TerraformerState terraformer_state;
+	std::set<TileIndex> affected_tiles;
+
+	/** The score, i.e. the number of fixed tiles minus the number of tiles that were previously ok, but would be not ok for water if the operation would be executed. */
+	int score;
+
+	/** Similar score, but for the number of planned river tiles having steep slope, or SLOPE_NS, or SLOPE_EW. */
+	int extra_bad_score;
+
+	bool success;
+
+	Slope slope;
+	int height;
+
+	TerraformingAction(Slope slope, int height) { this->slope = slope; this->height = height; this->terraformer_state = TerraformerState(); affected_tiles = std::set<TileIndex>(); this->score = 0; this->extra_bad_score = 0; this->success = false; }
+
+	bool operator < (const TerraformingAction& other) const
+    {
+		if (!this->success) {
+			return false;
+		} else if (!other.success) {
+			return true;
+		} else {
+			return this->score > other.score;
+		}
+    }
+};
+
 /** A river generator, that generates rivers based on simulating rainfall on each tile
  *  (currently, each tile receives the same rainfall, but this is no must in terms of the algorithm),
  *  and based on this, simulates flow downwards the landscape.  Where enough flow is available,
@@ -1043,6 +1090,11 @@ private:
 	static const uint LAKE_HASH_SIZE = 8; ///< The number of bits the hash for lake path finding should have.
 	static uint LakePathSearch_Hash(uint tile, uint dir);
 
+	/* Conceptionally a map from slopes to lists of possible terraforming operations.  Implemented in a way that
+     * is efficient, and can be written down in a concise manner.
+     */
+	std::vector<TerraformingScheme> slope_to_schemes[31];
+
 	LakeConnectedComponentCalculator *lake_connected_component_calculator;
 
 	bool IsPlannedAsWater(TileIndex tile, int *water_flow, byte *water_info);
@@ -1052,6 +1104,7 @@ private:
 	void DeclareNeighborTileWater(TileIndex water_neighbor_tiles[DIR_COUNT], TileIndex neighbor_tiles[DIR_COUNT], bool add_tile, Direction direction);
 	void SetExtraNeighborTilesProcessed(TileIndex water_neighbor_tiles[DIR_COUNT], byte *water_info, std::vector<TileWithValue> &extra_river_tiles, bool add_tile, Direction direction, int flow);
 	void UpdateFlow(int *water_flow, std::vector<TileWithHeightAndFlow> &water_tiles);
+	void GetProblemTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::set<TileIndex> &problem_tiles, byte *water_info);
 
 	void ModifyFlow(int *water_flow, byte *water_info);
 
@@ -1072,6 +1125,10 @@ private:
 
 	void MarkCornerTileGuaranteed(int *water_flow, byte *water_info, std::set<TileIndex>* lake_tiles, std::set<TileIndex> &guaranteed_water_tiles, TileIndex tile, Direction direction,
 						  Direction alternative_direction_one, Direction alternative_direction_two);
+
+	bool ImproveByTerraforming(TileIndex tile, int flow, std::set<TileIndex> &tiles_fixed, std::set<TileIndex> &new_problem_tiles, int *water_flow, byte *water_info,
+							   DefineLakesIterator *define_lakes_iterator, bool only_self, bool only_improve, bool make_water_afterwards);
+	void FixByLocalTerraforming(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
 
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
 	bool IsInclinedSlopePossible(TileIndex tile, TileIndex water_neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info, Direction direction, Slope slope, Slope desired_slope, int min_diagonal_height,

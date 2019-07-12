@@ -2252,6 +2252,17 @@ void RainfallRiverGenerator::UpdateFlow(int *water_flow, std::vector<TileWithHei
 	}
 }
 
+void RainfallRiverGenerator::GetProblemTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::set<TileIndex> &problem_tiles, byte *water_info)
+{
+	problem_tiles.clear();
+	for (int n = 0; n < (int)water_tiles.size(); n++) {
+		TileIndex tile = water_tiles[n].tile;
+		if (WasProcessed(water_info, tile) && !IsTileSuitableForRiver(tile)) {
+			problem_tiles.insert(tile);
+		}
+	}
+}
+
 /* ========================================================= */
 /* ================ Flow modification ====================== */
 /* ========================================================= */
@@ -3346,6 +3357,258 @@ void RainfallRiverGenerator::MarkCornerTileGuaranteed(int *water_flow, byte *wat
 }
 
 /* ========================================================= */
+/* ======= Fix problem tiles using local terraforming ====== */
+/* ========================================================= */
+
+/** Tries to improves a problem tile (i.e. a planned river tile with invalid slope) by performing terraforming on the small scale.
+ *  See FixByLocalTerraforming for the general idea.
+ *  @param tile some tile
+ *  @param flow amount of flow to be used for new water tiles
+ *  @param tiles_fixed tiles which became / become valid as side effect during the current calculation.
+ *  @param new_problem_tiles tiles that were valid before, but became / become invalid during the calculation.  Such tiles can exist, if more tiles get better than worse.
+ *  @param water_flow the water flow array
+ *  @param water_info the water info array
+ *  @param define_lakes_iterator the DefineLakesIterator with information about lakes
+ *  @param only_self if true, schemes terraforming another tile than the given one will not be used
+ *  @param only_improve if true, results that make things better by improving tiles, but at the same time making some other tiles worse are not allowed.
+ *  @param make_water_afterwards if true, the tile is made water afterwards
+ *  @return wether a terraforming that improves the overall situation could be executed
+ */
+bool RainfallRiverGenerator::ImproveByTerraforming(TileIndex tile, int flow, std::set<TileIndex> &tiles_fixed, std::set<TileIndex> &new_problem_tiles, int *water_flow, byte *water_info,
+												   DefineLakesIterator *define_lakes_iterator, bool only_self, bool only_improve, bool make_water_afterwards)
+{
+	int height = TileHeight(tile);
+	Slope slope = GetTileSlope(tile);
+
+	DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "......... Processing tile (%i,%i) with (%s,%i)", TileX(tile), TileY(tile), SlopeToString(slope), height);
+
+	/* The list of simulated terraforming operations.  Each of its indices must match the corresponding index in the TerraformingScheme vector
+	 * for the current slope.  If this condition is violated, you will get segmentation faults from the code below!
+	 */
+	std::vector<TerraformingAction> actions = std::vector<TerraformingAction>();
+
+	for (uint z = 0; z < this->slope_to_schemes[slope].size(); z++) {
+
+		/*  The scheme contains a desired slope, a desired height difference, and a dx/dy value to be applied on the tile position.
+		 *  It will take the height of the current tile, adds the height difference, then walks to a neighbor tile based on the
+		 *  dx/dy value, and finally terraforms that tile to the desired slope / desired height combination.
+		 *  Remarks:
+		 *  - The most frequent case is dx,dy = (0,0).
+		 *  - However, some configurations of tiles can be better solved when one tries to terraform a neighbor tile.
+		 *  - As we don´t know anything about its slope (and thus the height of its northern corner), we decide its height based on our height.
+		 */
+		TerraformingScheme scheme = this->slope_to_schemes[slope][z];
+		int desired_height = height + scheme.delta_height;
+
+		int tx = TileX(tile) + scheme.dx;
+		int ty = TileY(tile) + scheme.dy;
+		TileIndex terraform_tile = (tx > 0 && tx < (int)MapMaxX() && ty > 0 && ty < (int)MapMaxY()) ? TileXY(tx, ty) : INVALID_TILE;
+
+		/* Bookkeeping */
+		actions.push_back(TerraformingAction(scheme.slope, desired_height));
+
+		if (terraform_tile == INVALID_TILE || (only_self && (scheme.dx != 0 || scheme.dy != 0))) {
+			/*  If the step to the terraform tile leads outside map, we can´t do anything.  Also, if we want to make the tile water afterwards,
+			 *  we explicitely want to terraform this tile (as we use this mode in situations with a pretty clear picture of the situations).
+			 */
+			actions[z].success = false;
+		} else {
+			actions[z].success = SimulateTerraformTileToSlope(terraform_tile, desired_height, scheme.slope, actions[z].terraformer_state);
+		}
+
+		if (actions[z].success) {
+			/* Terraforming is possible (most probably it is, as there are not many reason for a failed terraforming in river generation, where
+			 * no houses, industries, etc. exist yet), now evaluate it.
+			 */
+			this->RegisterTilesAffectedByTerraforming(actions[z].terraformer_state, actions[z].affected_tiles, water_info, 0);
+
+			/* Number of tiles that become better */
+			int fixed_tiles = 0;
+
+			/* Number of tiles that become worse */
+			int number_of_new_problem_tiles = 0;
+
+			/* We consider the steep slopes, and the SLOPE_EW, SLOPE_NS as extra bad slopes, since they are sometimes difficult to fix by
+			 * local terraformings that are improving the overall situation, in terms of number of invalid slopes.
+			 * Thus, we count the number of such slopes before and afterwards, and if it decreases, we take a TerraformingAction even if
+			 * it has score < 0.  By only doing this if the number of such slopes decreases, we get the guarantee that the local
+			 * terraforming iteration terminates - we cannot decrease the number of such slopes forever.
+		     */
+			int no_longer_extra_bad_slope = 0;
+			int now_extra_bad_slope = 0;
+
+			for (std::set<TileIndex>::const_iterator it2 = actions[z].affected_tiles.begin(); it2 != actions[z].affected_tiles.end(); it2++) {
+				/* affected_tile is a lake/river tile, because RegisterTilesAffectedByTerraforming already filters for that */
+				TileIndex affected_tile = *it2;
+
+				int curr_height;
+				Slope current_slope = GetTileSlope(affected_tile, &curr_height);
+
+				int planned_height = actions[z].terraformer_state.GetTileZ(affected_tile);
+				Slope planned_slope = actions[z].terraformer_state.GetPlannedSlope(affected_tile);
+
+				/* Don´t demolish lakes, and some other checks that lead to considering the action as not possible. */
+				if (affected_tile != tile
+					&& (curr_height != planned_height || current_slope != planned_slope)
+                    &&  (IsOrdinaryLakeTile(water_info, affected_tile) || IsLakeCenter(water_info, affected_tile))
+				    && WasProcessed(water_info, affected_tile)
+					&& (planned_height != define_lakes_iterator->GetLake(affected_tile)->GetSurfaceHeight() || planned_slope != SLOPE_FLAT)) {
+						actions[z].success = false;
+						DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, ".... Case %s, (%s,%i), (%i,%i): Trying to terraform lake tile (%i,%i) to (%s,%i), but surface_height is %i; discarding this",
+										SlopeToString(slope), SlopeToString(scheme.slope), scheme.delta_height, scheme.dx, scheme.dy, TileX(affected_tile), TileY(affected_tile),
+										SlopeToString(planned_slope), planned_height, define_lakes_iterator->GetLake(affected_tile)->GetSurfaceHeight());
+						break;
+				}
+
+				/* Don´t allow to raise coast tiles that are planned to become river tiles.  This can cut the connection between river and ocean. */
+				if (IsTileType(affected_tile, MP_WATER) && IsCoastTile(affected_tile) && curr_height == 0 && planned_height > 0) {
+					DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "Don´t allow to raise (%i,%i) to height > 0; discarding this", TileX(affected_tile), TileY(affected_tile));
+					actions[z].success = false;
+					break;
+				}
+
+				/* Now perform the bookkeeping */
+				bool planned_slope_valid = IsValidSlopeForRiver(planned_slope);
+				bool current_slope_valid = IsValidSlopeForRiver(current_slope);
+				bool planned_slope_extra_bad = IsSteepSlope(planned_slope) || planned_slope == SLOPE_NS || planned_slope == SLOPE_EW;
+				bool current_slope_extra_bad = IsSteepSlope(current_slope) || current_slope == SLOPE_NS || current_slope == SLOPE_EW;
+
+				if (!planned_slope_valid && current_slope_valid) {
+					number_of_new_problem_tiles++;
+				} else if (planned_slope_valid && !current_slope_valid) {
+					fixed_tiles++;
+				}
+				if (!planned_slope_extra_bad && current_slope_extra_bad) {
+					no_longer_extra_bad_slope++;
+				} else if (planned_slope_extra_bad && !current_slope_extra_bad) {
+					now_extra_bad_slope++;
+				}
+			}
+
+			/* Basically, the number of tiles that becomes better, minus the number of tiles that becomes worse.
+			 * If we restrict things to the own tile, we know for sure that it would be better afterwards, and thus
+			 * add one to the score.
+			 * (situation we want to avoid using that: a score of zero ends up in doing simply nothing...)
+			 */
+			actions[z].score = fixed_tiles - number_of_new_problem_tiles + (only_self ? 1 : 0);
+			actions[z].extra_bad_score = no_longer_extra_bad_slope - now_extra_bad_slope;
+
+			if (only_improve && number_of_new_problem_tiles > 0) {
+				actions[z].success = false;
+			}
+
+			DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, ".... Case %s, (%s,%i), (%i,%i): Terraforming (%i,%i) from (%s, %i) to (%s,%i) would make %i tiles better, %i tiles worse => score = %i (extra_bad_score = %i)",
+						  SlopeToString(slope), SlopeToString(scheme.slope), scheme.delta_height, scheme.dx, scheme.dy, TileX(terraform_tile), TileY(terraform_tile),
+						  SlopeToString(slope), height, SlopeToString(scheme.slope), desired_height, fixed_tiles, number_of_new_problem_tiles, actions[z].score, actions[z].extra_bad_score);
+		}
+	}
+
+	/* Sort.  Successful actions come first, and among them, higher scores come before lower score */
+	std::sort(actions.begin(), actions.end());
+
+	/* Actions are sorted descending by score.  Usually, the first index matches, however
+	 * the case that all actions have negative score, but a later one is the first one with extra_bad_score > 0
+	 * is possible.
+	 */
+	int chosen_action_index = -1;
+	for (int n = 0; n < (int)actions.size(); n++) {
+		if (actions[n].success && ((actions[n].score > 0 && actions[n].extra_bad_score >= 0) || actions[n].extra_bad_score > 0)) {
+			chosen_action_index = n;
+			break;
+		}
+	}
+
+	if (chosen_action_index >= 0) {
+		/* Execute the best terraforming */
+
+		DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "........ Choose to terraform to (%s,%i); score %i; extra_bad_score %i",
+							SlopeToString(actions[chosen_action_index].slope), actions[chosen_action_index].height, actions[chosen_action_index].score, actions[chosen_action_index].extra_bad_score);
+
+		ExecuteTerraforming(actions[chosen_action_index].terraformer_state);
+
+		/* ... and perform the bookkeeping */
+		for (std::set<TileIndex>::const_iterator it2 = actions[chosen_action_index].affected_tiles.begin(); it2 != actions[chosen_action_index].affected_tiles.end(); it2++) {
+			TileIndex affected_tile = *it2;
+			Slope current_slope = GetTileSlope(affected_tile);
+
+			bool current_slope_valid = IsValidSlopeForRiver(current_slope);
+			if (!current_slope_valid) {
+				DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "............ Adding affected tile (%i,%i) with new slope %s to problem tiles.",
+																TileX(affected_tile), TileY(affected_tile), SlopeToString(current_slope));
+				new_problem_tiles.insert(affected_tile);
+				tiles_fixed.erase(affected_tile);
+			} else {
+				tiles_fixed.insert(affected_tile);
+			}
+		}
+
+		/* Make the tile water */
+		if (make_water_afterwards) {
+			if (!IsTileSuitableForRiver(tile)) {
+				DEBUG(map, 0, "WARNING: Tile (%i,%i) is not suitable for water after terraforming it.  Might be a problem as the calling code relies on that.", TileX(tile), TileY(tile));
+			}
+
+			DeclareRiver(water_info, tile);
+			MarkProcessed(water_info, tile);
+			water_flow[tile] = flow;
+		}
+
+		return true;
+	} else {
+		return false;
+	}
+}
+
+/** This function tries to make problem tiles suitable for rivers by performing local terraforming operations.  For each problematic slope, a lookup table
+ *  contains a number of possible terraforming operations, that might improve the situation.  Each of those will be evaluated for some tile at hand,
+ *  and if any of them improves the situation, the best one will be executed.
+ *  The criterium for this is the number of tiles that would be fixed, minus the number of tiles that were fixed before, but would no longer be ok for water afterwards.
+ *  By only applying terraforming operations that improve the situation (i.e. the score described above must be > 0) we have the guarantee that the
+ *  algorithm will eventually terminate.
+ */
+void RainfallRiverGenerator::FixByLocalTerraforming(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator)
+{
+	DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "Starting FixByLocalTerraforming with " PRINTF_SIZE " problem tiles.", problem_tiles.size());
+
+	std::set<TileIndex> new_problem_tiles = std::set<TileIndex>();
+	bool any_tile_improved = false;
+	int number_of_iterations = 0;
+
+	do {
+		any_tile_improved = false;
+		std::set<TileIndex> tiles_fixed = std::set<TileIndex>();
+		DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, ".. Starting iteration %i with " PRINTF_SIZE " problem tiles.", number_of_iterations, problem_tiles.size());
+
+		for (std::set<TileIndex>::const_iterator it = problem_tiles.begin(); it != problem_tiles.end(); it++) {
+			TileIndex tile = *it;
+
+			bool success = this->ImproveByTerraforming(tile, water_flow[tile], tiles_fixed, new_problem_tiles, water_flow, water_info, define_lakes_iterator, false, false, false);
+
+			if (success) {
+				any_tile_improved = true;
+			} else {
+				new_problem_tiles.insert(tile);
+			}
+		}
+
+		/* Finally replace the contents of the problem_tiles set with the contents for the next iteration. */
+		problem_tiles.clear();
+		for (std::set<TileIndex>::const_iterator it = new_problem_tiles.begin(); it != new_problem_tiles.end(); it++) {
+			if (tiles_fixed.find(*it) == tiles_fixed.end()) {
+				problem_tiles.insert(*it);
+			} else {
+				DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "........ Ignoring tile (%i,%i) for the next iteration, since it was fixed.", TileX(*it), TileY(*it));
+			}
+		}
+		new_problem_tiles.clear();
+		number_of_iterations++;
+	} while (any_tile_improved);
+
+
+	DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "Finishing FixByLocalTerraforming after %i iterations with " PRINTF_SIZE " problem tiles.", number_of_iterations, problem_tiles.size());
+}
+
+/* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
 
@@ -3753,6 +4016,8 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  *  (6) Define lakes, i.e. decide which lake covers which tiles, and decide about the lake surface height.
  *  (7) Prepare rivers and lakes.  Add additional corner tiles to rivers, if flow is diagonal.  Terraform to lake surface height.
  *  (8) Generate wider rivers and valleys.
+ *  (9) Find problem tiles, i.e. tiles whose slope is not suitable for becoming river.
+ * (10) Try to fix them using terraforming on the small scale.  Do (among a number of possible actions) what fixes most problem tiles.
  * (12) Lower tiles with not yet valid slope, until they are suitable for river.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
@@ -3817,6 +4082,15 @@ void RainfallRiverGenerator::GenerateRivers()
 	this->GenerateWiderRivers(water_flow, water_info, define_lakes_iterator, water_tiles);
 	this->UpdateFlow(water_flow, water_tiles);
 
+	/* (9) Find problem tiles, i.e. tiles whose slope is not suitable for becoming river. */
+	std::set<TileIndex> problem_tiles = std::set<TileIndex>();
+	GetProblemTiles(water_tiles, problem_tiles, water_info);
+
+	/* (10) Try to fix them by performing terraforming on the small scale.  I.e., take the terraforming action
+	 *      out of a number of schemes for the slope at hand, that fixes most river tiles with invalid slope.
+	 */
+	this->FixByLocalTerraforming(problem_tiles, water_flow, water_info, define_lakes_iterator);
+
 	/* (12) The above algorithms worked rather heuristic.  They cannot guarantee that any planned river tile actually has
      *      correct slope (i.e., flat or inclined).  Thus, here we lower tiles until everything is ok.
 	 *      (with the exception that we never touch lakes, thus a few tiles that cannot be made suitable for water may remain).
@@ -3869,6 +4143,132 @@ void RainfallRiverGenerator::GenerateRivers()
 
 RainfallRiverGenerator::RainfallRiverGenerator()
 {
+	for (int n = 0; n < 31; n++) {
+		this->slope_to_schemes[n] = std::vector<TerraformingScheme>();
+	}
+
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_SW, 0));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_NW, 1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, 0));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, -1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, -1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 1, 1, 0));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 1, 0, -1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 1, 1, 1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_FLAT, 1, -1, -1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_SW, 1, 1, 1));
+	this->slope_to_schemes[SLOPE_W].push_back(TerraformingScheme(SLOPE_NW, 2, -1, -1));
+
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_NE, 1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_SE, 0));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 0, -1, 0));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, 1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 0, -1, 1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 1, -1, 0));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 1, 0, 1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 1, 1, 1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_FLAT, 1, -1, -1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_SE, 1, 1, 1));
+	this->slope_to_schemes[SLOPE_E].push_back(TerraformingScheme(SLOPE_NE, 2, -1, -1));
+
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, -1));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_NW, 0));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_NE, 0));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, -1, -1, 0));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, -1, 0, -1));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, -1, -1, -1));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, 0, -1, 0));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, -1));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, -1));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_FLAT, 0, -1, 1));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_NW, 1, 1, -1));
+	this->slope_to_schemes[SLOPE_N].push_back(TerraformingScheme(SLOPE_NE, 1, -1, 1));
+
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_SW, 0));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_SE, 0));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 1));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, 0));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, 1));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, 1));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 1, 1, 0));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 1, 0, 1));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 1, 1, -1));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_FLAT, 1, -1, 1));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_SW, 1, 1, -1));
+	this->slope_to_schemes[SLOPE_S].push_back(TerraformingScheme(SLOPE_SE, 1, -1, 1));
+
+	this->slope_to_schemes[SLOPE_EW].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_EW].push_back(TerraformingScheme(SLOPE_FLAT, 1));
+
+	this->slope_to_schemes[SLOPE_NS].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_NS].push_back(TerraformingScheme(SLOPE_FLAT, -1));
+
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_FLAT, -1));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_NW, 0));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_SW, -1));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_FLAT, 0, -1, 1));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_FLAT, 0, -1, 0));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, 1));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_FLAT, -1, -1, 0));
+	this->slope_to_schemes[SLOPE_NWS].push_back(TerraformingScheme(SLOPE_FLAT, -1, 0, 1));
+
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_FLAT, 1));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_SW, 0));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_SE, 0));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_FLAT, 1, -1, -1));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_FLAT, 1, -1, 0));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_FLAT, 1, 0, -1));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_FLAT, 0, -1, 0));
+	this->slope_to_schemes[SLOPE_WSE].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, -1));
+
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_FLAT, -1));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_NE, 0));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_SE, -1));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, -1));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, 0));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, -1));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_FLAT, -1, 1, 0));
+	this->slope_to_schemes[SLOPE_SEN].push_back(TerraformingScheme(SLOPE_FLAT, -1, 0, -1));
+
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_FLAT, 0));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_FLAT, -1));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_NW, 0));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_NE, 0));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, 1));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_FLAT, 0, 1, 0));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_FLAT, 0, 0, 1));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_FLAT, -1, 1, 0));
+	this->slope_to_schemes[SLOPE_ENW].push_back(TerraformingScheme(SLOPE_FLAT, -1, 0, 1));
+
+	this->slope_to_schemes[SLOPE_STEEP_W].push_back(TerraformingScheme(SLOPE_NW, 0));
+	this->slope_to_schemes[SLOPE_STEEP_W].push_back(TerraformingScheme(SLOPE_SW, -1));
+	this->slope_to_schemes[SLOPE_STEEP_W].push_back(TerraformingScheme(SLOPE_NW, 1));
+	this->slope_to_schemes[SLOPE_STEEP_W].push_back(TerraformingScheme(SLOPE_SW, 0));
+
+	this->slope_to_schemes[SLOPE_STEEP_E].push_back(TerraformingScheme(SLOPE_NE, 0));
+	this->slope_to_schemes[SLOPE_STEEP_E].push_back(TerraformingScheme(SLOPE_SE, -1));
+	this->slope_to_schemes[SLOPE_STEEP_E].push_back(TerraformingScheme(SLOPE_NE, 1));
+	this->slope_to_schemes[SLOPE_STEEP_E].push_back(TerraformingScheme(SLOPE_SE, 0));
+
+	this->slope_to_schemes[SLOPE_STEEP_N].push_back(TerraformingScheme(SLOPE_NW, -1));
+	this->slope_to_schemes[SLOPE_STEEP_N].push_back(TerraformingScheme(SLOPE_NE, -1));
+	this->slope_to_schemes[SLOPE_STEEP_N].push_back(TerraformingScheme(SLOPE_NW, 0));
+	this->slope_to_schemes[SLOPE_STEEP_N].push_back(TerraformingScheme(SLOPE_NE, 0));
+
+	this->slope_to_schemes[SLOPE_STEEP_S].push_back(TerraformingScheme(SLOPE_SW, 0));
+	this->slope_to_schemes[SLOPE_STEEP_S].push_back(TerraformingScheme(SLOPE_SE, 0));
+	this->slope_to_schemes[SLOPE_STEEP_S].push_back(TerraformingScheme(SLOPE_SW, 1));
+	this->slope_to_schemes[SLOPE_STEEP_S].push_back(TerraformingScheme(SLOPE_SE, 1));
+
 
 	/* Calculating the bounds for wider rivers. */
 	this->wide_river_bounds = std::vector<int>();
