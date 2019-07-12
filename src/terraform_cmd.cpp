@@ -51,6 +51,30 @@ Slope TerraformerState::GetPlannedSlope(TileIndex tile)
 	}
 }
 
+int TerraformerState::GetTileZ(TileIndex tile)
+{
+	if (TileX(tile) == MapMaxX() || TileY(tile) == MapMaxY()) return 0;
+
+	int h =    this->GetHeightOfTile(tile);                     // N corner
+	h = min(h, this->GetHeightOfTile(tile + TileDiffXY(1, 0))); // W corner
+	h = min(h, this->GetHeightOfTile(tile + TileDiffXY(0, 1))); // E corner
+	h = min(h, this->GetHeightOfTile(tile + TileDiffXY(1, 1))); // S corner
+
+	return h;
+}
+
+int TerraformerState::GetTileMaxZ(TileIndex tile)
+{
+	if (TileX(tile) == MapMaxX() || TileY(tile) == MapMaxY()) return TileHeightOutsideMap(TileX(tile), TileY(tile));
+
+	int h =         this->GetHeightOfTile(tile);                     // N corner
+	h = max<int>(h, this->GetHeightOfTile(tile + TileDiffXY(1, 0))); // W corner
+	h = max<int>(h, this->GetHeightOfTile(tile + TileDiffXY(0, 1))); // E corner
+	h = max<int>(h, this->GetHeightOfTile(tile + TileDiffXY(1, 1))); // S corner
+
+	return h;
+}
+
 /**
  * Gets the TileHeight (height of north corner) of a tile as of current terraforming progress.
  *
@@ -58,10 +82,10 @@ Slope TerraformerState::GetPlannedSlope(TileIndex tile)
  * @param tile Tile.
  * @return TileHeight.
  */
-static int TerraformGetHeightOfTile(const TerraformerState *ts, TileIndex tile)
+int TerraformerState::GetHeightOfTile(TileIndex tile)
 {
-	TileIndexToHeightMap::const_iterator it = ts->tile_to_new_height.find(tile);
-	return it != ts->tile_to_new_height.end() ? it->second : TileHeight(tile);
+	TileIndexToHeightMap::const_iterator it = this->tile_to_new_height.find(tile);
+	return it != this->tile_to_new_height.end() ? it->second : TileHeight(tile);
 }
 
 /**
@@ -71,9 +95,9 @@ static int TerraformGetHeightOfTile(const TerraformerState *ts, TileIndex tile)
  * @param tile Tile.
  * @param height New TileHeight.
  */
-static void TerraformSetHeightOfTile(TerraformerState *ts, TileIndex tile, int height)
+void TerraformerState::SetHeightOfTile(TileIndex tile, int height)
 {
-	ts->tile_to_new_height[tile] = height;
+	this->tile_to_new_height[tile] = height;
 }
 
 /**
@@ -83,9 +107,9 @@ static void TerraformSetHeightOfTile(TerraformerState *ts, TileIndex tile, int h
  * @param tile Tile.
  * @ingroup dirty
  */
-static void TerraformAddDirtyTile(TerraformerState *ts, TileIndex tile)
+void TerraformerState::AddDirtyTile(TileIndex tile)
 {
-	ts->dirty_tiles.insert(tile);
+	this->dirty_tiles.insert(tile);
 }
 
 /**
@@ -95,13 +119,13 @@ static void TerraformAddDirtyTile(TerraformerState *ts, TileIndex tile)
  * @param tile Tile.
  * @ingroup dirty
  */
-static void TerraformAddDirtyTileAround(TerraformerState *ts, TileIndex tile)
+void TerraformerState::AddDirtyTileAround(TileIndex tile)
 {
 	/* Make sure all tiles passed to TerraformAddDirtyTile are within [0, MapSize()] */
-	if (TileY(tile) >= 1) TerraformAddDirtyTile(ts, tile + TileDiffXY( 0, -1));
-	if (TileY(tile) >= 1 && TileX(tile) >= 1) TerraformAddDirtyTile(ts, tile + TileDiffXY(-1, -1));
-	if (TileX(tile) >= 1) TerraformAddDirtyTile(ts, tile + TileDiffXY(-1,  0));
-	TerraformAddDirtyTile(ts, tile);
+	if (TileY(tile) >= 1) this->AddDirtyTile(tile + TileDiffXY( 0, -1));
+	if (TileY(tile) >= 1 && TileX(tile) >= 1) this->AddDirtyTile(tile + TileDiffXY(-1, -1));
+	if (TileX(tile) >= 1) this->AddDirtyTile(tile + TileDiffXY(-1,  0));
+	this->AddDirtyTile(tile);
 }
 
 /**
@@ -125,7 +149,7 @@ static CommandCost TerraformTileHeight(TerraformerState *ts, TileIndex tile, int
 	 * This can only be true, if multiple corners of the start-tile are terraformed (i.e. the terraforming is done by towns/industries etc.).
 	 * In this case the terraforming should fail. (Don't know why.)
 	 */
-	if (error_if_no_effect && height == TerraformGetHeightOfTile(ts, tile)) return CMD_ERROR;
+	if (error_if_no_effect && height == ts->GetHeightOfTile(tile)) return CMD_ERROR;
 
 	/* Check "too close to edge of map". Only possible when freeform-edges is off. */
 	uint x = TileX(tile);
@@ -141,10 +165,10 @@ static CommandCost TerraformTileHeight(TerraformerState *ts, TileIndex tile, int
 	}
 
 	/* Mark incident tiles that are involved in the terraforming. */
-	TerraformAddDirtyTileAround(ts, tile);
+	ts->AddDirtyTileAround(tile);
 
 	/* Store the height modification */
-	TerraformSetHeightOfTile(ts, tile, height);
+	ts->SetHeightOfTile(tile, height);
 
 	CommandCost total_cost(EXPENSES_CONSTRUCTION);
 
@@ -172,7 +196,7 @@ static CommandCost TerraformTileHeight(TerraformerState *ts, TileIndex tile, int
 			if (Delta(TileY(orig_tile), TileY(tile)) == MapSizeY() - 1) continue;
 
 			/* Get TileHeight of neighboured tile as of current terraform progress */
-			int r = TerraformGetHeightOfTile(ts, tile);
+			int r = ts->GetHeightOfTile(tile);
 			int height_diff = height - r;
 
 			/* Is the height difference to the neighboured corner greater than 1? */
@@ -210,10 +234,10 @@ CommandCost ProcessTunnelsBridgesObjectsForTerraforming(TerraformerState &ts, Co
 			if (IsTileType(tile, MP_VOID)) continue;
 
 			/* Find new heights of tile corners */
-			int z_N = TerraformGetHeightOfTile(&ts, tile + TileDiffXY(0, 0));
-			int z_W = TerraformGetHeightOfTile(&ts, tile + TileDiffXY(1, 0));
-			int z_S = TerraformGetHeightOfTile(&ts, tile + TileDiffXY(1, 1));
-			int z_E = TerraformGetHeightOfTile(&ts, tile + TileDiffXY(0, 1));
+			int z_N = ts.GetHeightOfTile(tile + TileDiffXY(0, 0));
+			int z_W = ts.GetHeightOfTile(tile + TileDiffXY(1, 0));
+			int z_S = ts.GetHeightOfTile(tile + TileDiffXY(1, 1));
+			int z_E = ts.GetHeightOfTile(tile + TileDiffXY(0, 1));
 
 			/* Find min and max height of tile */
 			int z_min = min(min(z_N, z_W), min(z_S, z_E));
@@ -392,7 +416,7 @@ CommandCost CmdTerraformLand(TileIndex tile, DoCommandFlag flags, uint32 p1, uin
 		for (TileIndexSet::const_iterator it = ts.dirty_tiles.begin(); it != ts.dirty_tiles.end(); it++) {
 			MarkTileDirtyByTile(*it);
 
-			int height = TerraformGetHeightOfTile(&ts, *it);
+			int height = ts.GetHeightOfTile(*it);
 
 			/* Now, if we alter the height of the map edge, we need to take care
 			 * about repainting the affected areas outside map as well.

@@ -29,6 +29,12 @@ struct TerraformerState {
 	TileIndexToHeightMap tile_to_new_height; ///< The tiles for which the height has changed.
 
 	Slope GetPlannedSlope(TileIndex tile);
+	int GetTileZ(TileIndex tile);
+	int GetTileMaxZ(TileIndex tile);
+	int GetHeightOfTile(TileIndex tile);
+	void SetHeightOfTile(TileIndex tile, int height);
+	void AddDirtyTile(TileIndex tile);
+	void AddDirtyTileAround(TileIndex tile);
 };
 
 bool SimulateTerraformTileToSlope(TileIndex tile, int desired_height, Slope desired_slope, TerraformerState &terraformer_state);
