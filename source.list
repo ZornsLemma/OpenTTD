@@ -43,6 +43,7 @@ hotkeys.cpp
 ini.cpp
 ini_load.cpp
 landscape.cpp
+landscape_util.cpp
 linkgraph/demands.cpp
 linkgraph/flowmapper.cpp
 linkgraph/linkgraph.cpp
@@ -225,6 +226,7 @@ industry_type.h
 industrytype.h
 ini_type.h
 landscape.h
+landscape_util.h
 landscape_type.h
 language.h
 linkgraph/demands.h
