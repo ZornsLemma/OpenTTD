@@ -30,6 +30,7 @@
 #include "progress.h"
 #include "error.h"
 #include "gui.h"
+#include "rivers_rainfall.h"
 
 #include "widgets/genworld_widget.h"
 
@@ -699,6 +700,8 @@ struct GenerateLandscapeWindow : public Window {
 				break;
 
 			case WID_GL_RIVER_EXPERT_SETTINGS_BUTTON: // Expert settings for rainfall river generator
+				/* Reset to user defined whenever the expert settings window is opened. */
+				_settings_newgame.game_creation.amount_of_rivers = 4;
 				ShowRainfallOptionsWindow(this);
 				break;
 
@@ -756,7 +759,38 @@ struct GenerateLandscapeWindow : public Window {
 			case WID_GL_MAPSIZE_Y_PULLDOWN:     _settings_newgame.game_creation.map_y = index; break;
 			case WID_GL_TREE_PULLDOWN:          _settings_newgame.game_creation.tree_placer = index; break;
 			case WID_GL_RIVER_GENERATOR_PULLDOWN: _settings_newgame.game_creation.river_generator = index; break;
-			case WID_GL_RIVER_AMOUNT_PULLDOWN:  _settings_newgame.game_creation.amount_of_rivers = index; break;
+			case WID_GL_RIVER_AMOUNT_PULLDOWN:
+				_settings_newgame.game_creation.amount_of_rivers = index;
+
+				/* If the rainfall river generator is active, translate the configured amount
+				 * into its world.  Just changing flow for river and flow per lake volume, plus
+				 * forbidding wide rivers if "Few" is selected is sufficient, as the other
+				 * settings aren´t exactly related to how many water we generate, but rather with
+			     * the question how it looks like.
+				 */
+				if (_settings_newgame.game_creation.river_generator == RG_RAINFALL) {
+					switch (_settings_newgame.game_creation.amount_of_rivers) {
+						case 1:
+							_settings_newgame.game_creation.rainfall.flow_for_river = DEF_FEW_RIVERS_FLOW_FOR_RIVER;
+							_settings_newgame.game_creation.rainfall.flow_per_lake_volume = DEF_FEW_RIVERS_FLOW_PER_LAKE_VOLUME;
+							_settings_newgame.game_creation.rainfall.wider_rivers_enabled = DEF_FEW_RIVERS_WIDER_RIVERS_ENABLED;
+							break;
+						case 2:
+							_settings_newgame.game_creation.rainfall.flow_for_river = DEF_MODERATE_RIVERS_FLOW_FOR_RIVER;
+							_settings_newgame.game_creation.rainfall.flow_per_lake_volume = DEF_MODERATE_RIVERS_FLOW_PER_LAKE_VOLUME;
+							_settings_newgame.game_creation.rainfall.wider_rivers_enabled = DEF_MODERATE_RIVERS_WIDER_RIVERS_ENABLED;
+							break;
+						case 3:
+							_settings_newgame.game_creation.rainfall.flow_for_river = DEF_LOT_RIVERS_FLOW_FOR_RIVER;
+							_settings_newgame.game_creation.rainfall.flow_per_lake_volume = DEF_LOT_RIVERS_FLOW_PER_LAKE_VOLUME;
+							_settings_newgame.game_creation.rainfall.wider_rivers_enabled = DEF_LOT_RIVERS_WIDER_RIVERS_ENABLED;
+							break;
+						case 4:
+							ShowRainfallOptionsWindow(this);
+							break;
+					}
+				}
+				break;
 			case WID_GL_SMOOTHNESS_PULLDOWN:    _settings_newgame.game_creation.tgen_smoothness = index;  break;
 			case WID_GL_VARIETY_PULLDOWN:       _settings_newgame.game_creation.variety = index; break;
 
