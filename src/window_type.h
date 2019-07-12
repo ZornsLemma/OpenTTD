@@ -462,6 +462,12 @@ enum WindowClass {
 	 */
 	WC_TOWN_RAINFALL_OPTIONS,
 
+ 	/**
+	 * Town placer edit window, for adding / editing one particular configuration; %Window numbers:
+	 *   - 0 = #TownPlacerEdit
+	 */
+	WC_TOWN_PLACER_EDIT,
+
 	/**
 	 * Progress report of landscape generation; %Window numbers:
 	 *   - 0 = #GenerationProgressWidgets

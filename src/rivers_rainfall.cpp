@@ -6196,11 +6196,12 @@ void RainfallRiverGenerator::CalculateTownScoreStepTwo(TownScore *town_scores, u
 			}
 		}
 	}
-
+/*
 	DEBUG(misc, RAINFALL_TOWN_LOG_LEVEL, "Grid (%u,%u): river_size = %i, river_branch = %i, water_amount = (%i,%i), max_lake = %i, lake_size = %i, river_end = %i, flat = %i, height = (%i,%i,%i)",
 	  x, y, town_score->river_size_score, town_score->river_branch_score, town_score->lake_amount_score,
 			  town_score->ocean_amount_score, town_score->max_lake_size, town_score->lake_size_score, town_score->river_end_score,
 			  town_score->flat_score, town_score->min_height, town_score->average_height, town_score->max_height);
+*/
 }
 
 /* ========================================================= */

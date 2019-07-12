@@ -140,6 +140,17 @@ enum TownRainfallOptionWidgets {
 	WID_TROP_PHASE_TWO_DELETE_BUTTON,          ///< Delete button phase two
 };
 
+enum TownPlacerEditWidgets {
+	WID_TPE_CAPTION,                           ///< Caption of the Window
+	WID_TPE_TOWN_PLACER_DROPDOWN,              ///< Drop down for choosing the town placer
+	WID_TPE_WEIGHT_TEXTBOX,                    ///< Textbox for entering the weight
+	WID_TPE_HELP_LABEL_SPACER,                 ///< Vertical spacer below the How it works label
+	WID_TPE_DESC_CONTENT,                      ///< Description of town placer
+	WID_TPE_OK_BUTTON,                         ///< The ok button
+	WID_TPE_ABORT_BUTTON,                      ///< The abort button
+	WID_TPE_END,                               ///< Marker constant, for adding more widgets dynamically
+};
+
 /** Widgets of the #GenerateProgressWindow class. */
 enum GenerationProgressWidgets {
 	WID_GP_PROGRESS_BAR,  ///< Progress bar.

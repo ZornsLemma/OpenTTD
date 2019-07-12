@@ -1106,6 +1106,22 @@ STR_TP_RAINFALL_EDIT_BUTTON_TOOLTIP                             :Edit the select
 STR_TP_RAINFALL_DELETE_BUTTON_CAPTION                           :{BLACK}Delete
 STR_TP_RAINFALL_DELETE_BUTTON_TOOLTIP                           :Delete the selected town placer configuration
 
+STR_TPE_CAPTION                                                 :{WHITE}Edit town placer configuration
+STR_TPE_TOWN_PLACER                                             :{BLACK}Town placer
+STR_TPE_TOWN_PLACER_TOOLTIP                                     :Choose one of the town placers.  Think of a town placer as one particular strategy to place towns.  E.g. it might place towns only near the ocean.
+STR_TPE_WEIGHT                                                  :{BLACK}Weight
+STR_TPE_WEIGHT_TOOLTIP                                          :The weight with which this town placer will be used.  Think of it as a probability, but scaled on the sum of the weights of all town placers.
+STR_TPE_HELP                                                    :{BLACK}How it works
+STR_TPE_HELP_LINE_ONE                                           :{BLACK}- The map is split up into rectangular areas of 16x16 tiles
+STR_TPE_HELP_LINE_TWO                                           :{BLACK}- For each such area, various values get calculated
+STR_TPE_HELP_LINE_THREE                                         :{BLACK}- Town placers are called with certain probabilities (weights)
+STR_TPE_HELP_LINE_FOUR                                          :{BLACK}- And decide, based on those values, wether a town may be placed here
+STR_TPE_HELP_LINE_FIVE                                          :{BLACK}- Fractions are expressed in 1/1000, e.g. 300 for 30 percent
+STR_TPE_DESCRIPTION                                             :{BLACK}The chosen town placer
+STR_TPE_DESCRIPTION_TOOLTIP                                     :How the currently chosen town placer works
+STR_TPE_OK_BUTTON                                               :Ok
+STR_TPE_ABORT_BUTTON                                            :Abort
+
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced
 STR_DISASTER_NORMAL                                             :Normal

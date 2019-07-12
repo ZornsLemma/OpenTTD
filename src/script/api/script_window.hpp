@@ -543,6 +543,10 @@ public:
 		 */
 		WC_TOWN_RAINFALL_OPTIONS                     = ::WC_TOWN_RAINFALL_OPTIONS,
 
+		/** Adding or editing a town placer config.
+		 *   - 0 = #TownPlacerEdit
+		 */
+		WC_TOWN_PLACER_EDIT = ::WC_TOWN_PLACER_EDIT,
 
 		/**
 		 * Progress report of landscape generation; %Window numbers:
@@ -1413,6 +1417,18 @@ public:
 		WID_TROP_PHASE_TWO_ADD_BUTTON                = ::WID_TROP_PHASE_TWO_ADD_BUTTON,                ///< Add button phase two
 		WID_TROP_PHASE_TWO_EDIT_BUTTON               = ::WID_TROP_PHASE_TWO_EDIT_BUTTON,               ///< Edit button phase two
 		WID_TROP_PHASE_TWO_DELETE_BUTTON             = ::WID_TROP_PHASE_TWO_DELETE_BUTTON,             ///< Delete button phase two
+	};
+
+	/** Widgets for the town placer edit widget (for adding / editing one particular configuration) */
+	enum TownPlacerEditWidgets {
+		WID_TPE_CAPTION                              = ::WID_TPE_CAPTION,                              ///< Caption of the Window
+		WID_TPE_TOWN_PLACER_DROPDOWN                 = ::WID_TPE_TOWN_PLACER_DROPDOWN,                 ///< Dropdown for choosing a town placer
+		WID_TPE_WEIGHT_TEXTBOX                       = ::WID_TPE_WEIGHT_TEXTBOX,                       ///< Textbox for entering the weight of the town placer
+		WID_TPE_HELP_LABEL_SPACER                    = ::WID_TPE_HELP_LABEL_SPACER,                    ///< Vertical spacer below the How it works label
+		WID_TPE_DESC_CONTENT                         = ::WID_TPE_DESC_CONTENT,                         ///< Description of a town placer
+		WID_TPE_OK_BUTTON                            = ::WID_TPE_OK_BUTTON,                            ///< The ok button
+		WID_TPE_ABORT_BUTTON                         = ::WID_TPE_ABORT_BUTTON,                         ///< The abort button
+		WID_TPE_END                                  = ::WID_TPE_END,                                  ///< Marker constant, for adding more widgets dynamically
 	};
 
 
