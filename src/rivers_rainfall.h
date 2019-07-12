@@ -1030,6 +1030,10 @@ private:
 
 	void ModifyFlow(int *water_flow, byte *water_info);
 
+	std::vector<int> wide_river_bounds;
+	int GetWideRiverBoundForFlow(int flow);
+	inline int GetFlowNeededForWideRiverBound(int bound) { return this->wide_river_bounds[bound]; }
+
 	void PrepareLake(TileIndex tile, int *water_flow, byte *water_info, DefineLakesIterator *lake_iterator, std::vector<TileWithValue> &extra_water_tiles);
 	void ChooseTileForExtraRiver(TileIndex tile,
 								TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT],
@@ -1055,7 +1059,7 @@ private:
 public:
 	static bool CalculateLakePath(std::set<TileIndex> &lake_tiles, TileIndex from_tile, TileIndex to_tile, std::vector<TileIndex> &path_tiles, int max_height);
 
-	RainfallRiverGenerator() {}
+	RainfallRiverGenerator();
 	virtual void GenerateRivers();
 };
 

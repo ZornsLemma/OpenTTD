@@ -2245,6 +2245,24 @@ void RainfallRiverGenerator::ModifyFlow(int *water_flow, byte *water_info) {
 }
 
 /* ========================================================= */
+/* ================== Wider rivers ========================= */
+/* ========================================================= */
+
+/** Returns which bound for wide rivers the given flow reaches.  I.e. the width of a corresponding river,
+ *  if wide rivers are enabled.
+ *  @param flow some flow value
+ *  @return the width of a corresponding river
+ */
+int RainfallRiverGenerator::GetWideRiverBoundForFlow(int flow)
+{
+	int reached_bound = 0;
+	while (this->wide_river_bounds[reached_bound + 1] <= flow && reached_bound < (int)this->wide_river_bounds.size() - 1) {
+		reached_bound++;
+	}
+	return reached_bound;
+}
+
+/* ========================================================= */
 /* ======= Prepare Lakes, Terraform to surface height ====== */
 /* ========================================================= */
 
@@ -3409,4 +3427,31 @@ void RainfallRiverGenerator::GenerateRivers()
 	delete lower_iterator;
 	delete flow_iterator;
 	delete height_index;
+}
+
+RainfallRiverGenerator::RainfallRiverGenerator()
+{
+
+	/* Calculating the bounds for wider rivers. */
+	this->wide_river_bounds = std::vector<int>();
+	this->wide_river_bounds.push_back(0);
+
+	/* Calculate bound as <river_width>^(multiplier / 10) */
+	int64 curr_bound;
+	int curr_step = 1;
+	do {
+		curr_bound = (int64)_settings_newgame.game_creation.rainfall.flow_for_river * (int64)pow((double)curr_step, (double)_settings_newgame.game_creation.rainfall.wider_rivers_multiplier / (double)10);
+		DEBUG(misc, 9, "Generating bounds: curr_step = %i, flow_for_river = %i, flow_for_river_i64 = " OTTD_PRINTF64 ", multiplier = %i, multiplier_double = %f, exponent = %f, pow = %f"
+					  "pow_i64 = " OTTD_PRINTF64 ", curr_bound = " OTTD_PRINTF64 ", INT32_MAX = %i",
+					  curr_step, _settings_newgame.game_creation.rainfall.flow_for_river, (int64)_settings_newgame.game_creation.rainfall.flow_for_river,
+					  _settings_newgame.game_creation.rainfall.wider_rivers_multiplier, (double)_settings_newgame.game_creation.rainfall.wider_rivers_multiplier,
+					  (double)_settings_newgame.game_creation.rainfall.wider_rivers_multiplier / (double)10,
+					  pow((double)curr_step, (double)_settings_newgame.game_creation.rainfall.wider_rivers_multiplier / (double)10),
+					  (int64)pow((double)curr_step, (double)_settings_newgame.game_creation.rainfall.wider_rivers_multiplier / (double)10),
+					  curr_bound, INT32_MAX);
+		curr_step++;
+		if (curr_bound < INT32_MAX) {
+			this->wide_river_bounds.push_back((int)curr_bound);
+		}
+	} while (curr_bound < INT32_MAX);
 }
