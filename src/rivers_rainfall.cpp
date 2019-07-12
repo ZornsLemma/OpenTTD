@@ -5883,7 +5883,8 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  * (16) Get rid of rivers flowing upwards.
  * (17) Link rivers with the ocean.
  * (18) Raise lower terrain near rivers, to avoid the picture of "why doesn´t it flow down there?"
- * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
+ * (19) Another final call to lowering tiles until valid for rivers.
+ * (20) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
 {
@@ -6002,7 +6003,12 @@ void RainfallRiverGenerator::GenerateRivers()
      */
 	this->FixLowerTerrainNearRivers(water_info, id_to_river);
 
-	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
+	/* (19) The previous patches changes situation, thus we perform another call to FineTuneTilesForWater.
+	 *      It probably doesn´t need to do more than fixing some isolated tiles...
+	 */
+	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator);
+
+	/* (20) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);
 
 	delete this->lake_connected_component_calculator;
