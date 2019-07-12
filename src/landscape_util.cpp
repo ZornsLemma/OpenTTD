@@ -227,3 +227,84 @@ void HeightLevelIterator::Calculate(int heightlevel)
 		}
 	}
 }
+
+/*============================ Inspecting the neighborhood of tiles ================================*/
+/*=================================================================================================*/
+
+/** Stores the TileIndex of all straight neighbor tiles of the given tile into the given TileIndex array,
+ *  at the indices given by enum Direction.  If a tile doesn´t exist, since it is beyond the map edge,
+ *  INVALID_TILE is stored.
+ *  Straight neighbor tiles are the north-east, north-west, south-east and south-west neighbor tiles.
+ *  @param tile the tile
+ *  @param neighbor_tiles array of length 8
+ */
+void StoreStraightNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT])
+{
+	int x = TileX(tile);
+	int y = TileY(tile);
+
+	neighbor_tiles[DIR_NE] = x > 1                  ? TileXY(x - 1, y) : INVALID_TILE;
+	neighbor_tiles[DIR_NW] = y > 1                  ? TileXY(x, y - 1) : INVALID_TILE;
+	neighbor_tiles[DIR_SW] = x < (int)MapMaxX() - 1 ? TileXY(x + 1, y) : INVALID_TILE;
+	neighbor_tiles[DIR_SE] = y < (int)MapMaxY() - 1 ? TileXY(x, y + 1) : INVALID_TILE;
+}
+
+/** Stores the TileIndex of all diagonal neighbor tiles of the given tile into the given TileIndex array,
+ *  at the indices given by enum Direction.  If a tile doesn´t exist, since it is beyond the map edge,
+ *  INVALID_TILE is stored.
+ *  Diagonal neighbor tiles are the northern, western, eastern and southern neighbor tiles.
+ *  @param tile the tile
+ *  @param neighbor_tiles array of length 8
+ */
+void StoreDiagonalNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT])
+{
+	int x = TileX(tile);
+	int y = TileY(tile);
+
+	neighbor_tiles[DIR_N] = x > 1 && y > 1                                   ? TileXY(x - 1, y - 1) : INVALID_TILE;
+	neighbor_tiles[DIR_E]  = x > 1 && y < (int)MapMaxY() - 1                  ? TileXY(x - 1, y + 1) : INVALID_TILE;
+	neighbor_tiles[DIR_W]  = x < (int)MapMaxX() - 1 && y > 1                  ? TileXY(x + 1, y - 1) : INVALID_TILE;
+	neighbor_tiles[DIR_S] = x < (int)MapMaxX() - 1 && y < (int)MapMaxY() - 1 ? TileXY(x + 1, y + 1) : INVALID_TILE;
+}
+
+/** Stores the TileIndex of all neighbor tiles of the given tile, at the indices given by enum Direction.
+ *  If tile doesn´t exist since it is beyond the map edge, INVALID_TILE is stored.
+ *  @param tile the tile
+ *  @param neighbor_tiles array of length 8
+ */
+void StoreAllNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT])
+{
+	StoreStraightNeighborTiles(tile, neighbor_tiles);
+	StoreDiagonalNeighborTiles(tile, neighbor_tiles);
+}
+
+/** Given an array of neighbor tiles of some tile, this function calculates and stores both
+ *  slope and (minimum) height of the neighbor tiles into the given arrays.  Only indices
+ *  with a value not equal to INVALID_TILE are considered.
+ *  @param neighbor_tiles array of neighbor tiles
+ *  @param neighbor_slopes to be filled array of neighbor slopes
+ *  @param neighbor_heights to be filled array of neighbor heights
+ */
+void StoreSlopes(TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT])
+{
+	for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+		if (neighbor_tiles[n] != INVALID_TILE) {
+			neighbor_slopes[n] = GetTileSlope(neighbor_tiles[n], &neighbor_heights[n]);
+		}
+	}
+}
+
+/** Given an array of neighbor tiles of some tile, this function replaces all tiles,
+ *  for which the corresponding index in the invalidate_mask array is true by the
+ *  INVALID_TILE.
+ *  @param neighbor_tiles array of neighbor tiles
+ *  @param invalidate_mask invalidate mask as described
+ */
+void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[DIR_COUNT])
+{
+	for (uint n = DIR_BEGIN; n < DIR_END; n++) {
+		if (invalidate_mask[n]) {
+			neighbor_tiles[n] = INVALID_TILE;
+		}
+	}
+}

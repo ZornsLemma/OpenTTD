@@ -14,6 +14,10 @@
 
 #include "map_func.h"
 #include "slope_type.h"
+#include "debug.h"
+
+#include <set>
+#include <vector>
 
 /** The purpose of a HeightIndex is support for efficient access to all tiles
  *  of a given height.  E.g. a HeightIterator, which offers an interface for
@@ -110,6 +114,111 @@ public:
 	virtual ~HeightLevelIterator() {}
 
 	void Calculate(int heightlevel);
+};
+
+#define EMPTY_NEIGHBOR_TILES { INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE }
+
+void StoreStraightNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
+void StoreDiagonalNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
+void StoreAllNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
+void StoreSlopes(TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT]);
+void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[DIR_COUNT]);
+
+/** This class provides functionality for determining a connected component on the map.
+ *  Which tiles are recognized is subclass-specific (e.g. all tiles of a certain
+ *  heightlevel), furthermore the kind of container where the tiles belonging to the
+ *  connected component are to be stored is also subclass-specific via the template-parameter.
+ *
+ *  Note that collecting additional information beside the TileIndex into that container
+ *  is not forbidden.
+ */
+template <class T>
+struct ConnectedComponentCalculator {
+
+private:
+	/** If and only if this variable is true, the calculator will not just consider straight
+	 *  neighbors, but also diagonal neighbors.
+	 */
+	bool use_diagonal_neighbors;
+
+protected:
+	/** If and only if this function returns true for the tile at hand, it can belong
+     *  to the connected component.
+	 *
+     *  NOTE: This function should usually check wether the tile is already registered.
+     *  If so, it should return false to prevent endless recursion.
+     *
+     *  @param container the so far registered tiles of the connected component
+     *  @param tile the candidate tile
+	 *  @param prev_tile tile visited before the current tile, i.e. in the parent call of the recursion.
+	 *            In some circumstances, the way the two tiles are connected may influence the decision.
+     *  @return if the tile can belong to the connected component
+     */
+	virtual bool RecognizeTile(T &container, TileIndex tile, TileIndex prev_tile) = 0;
+
+	/** Stores the given tile in the container.
+     *  @param container the container
+     *  @param tile the new tile
+     */
+	virtual void StoreInContainer(T &container, TileIndex tile) = 0;
+
+public:
+	ConnectedComponentCalculator(bool use_diagonal_neighbors = true) { this->use_diagonal_neighbors = use_diagonal_neighbors; }
+	virtual ~ConnectedComponentCalculator() {}
+
+	/** Stores a connected component around the given tile in the given container.
+	 *  Calls itself recursively for appropriate neighbor tiles, until the whole
+	 *  connected component is determined.
+     *  Implementation note: I searched the right syntax for placing this templated
+     *  function into landscape_util.cpp without success - is it possible at all?
+	 *  @param container the initially empty container
+	 *  @param tile the starting tile
+     *  @param max_container_size optional maximum container size to prevent memory overflows,
+	 *                            use this if aborting the calculation at some point in time is
+	 *                            better than correctly adding millions of tiles to the contains,
+	 *                            at the risk of hard abortion because of memory overflow.
+	 *  @param prev_tile Tile visited before the current tile, i.e. in the parent call of the recursion.
+	 */
+	void StoreConnectedComponent(T &container, TileIndex tile, uint max_container_size = 0, TileIndex prev_tile = INVALID_TILE)
+	{
+		TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+		std::set<TileIndex> dirty_tiles = std::set<TileIndex>();
+		dirty_tiles.insert(tile);
+
+		while (dirty_tiles.size() > 0) {
+			std::vector<TileIndex> next_dirty_tiles = std::vector<TileIndex>();
+
+			for (std::set<TileIndex>::const_iterator it2 = dirty_tiles.begin(); it2 != dirty_tiles.end(); it2++) {
+				TileIndex curr_tile = *it2;
+
+				this->StoreInContainer(container, curr_tile);
+				if (max_container_size != 0 && container.size() >= max_container_size) {
+					return;
+				}
+
+				if (this->use_diagonal_neighbors) {
+					StoreAllNeighborTiles(curr_tile, neighbor_tiles);
+				} else {
+					StoreStraightNeighborTiles(curr_tile, neighbor_tiles);
+				}
+
+				for (uint n = 0; n < DIR_COUNT; n++) {
+					TileIndex neighbor_tile = neighbor_tiles[n];
+
+					/* Note that RecognizeTile ususally needs to perform a check wether we already have
+					 * have registered the tile.  Otherwise, we would generate an endless recursion here.
+					 */
+					if (neighbor_tile != INVALID_TILE && this->RecognizeTile(container, neighbor_tile, curr_tile)) {
+						next_dirty_tiles.push_back(neighbor_tile);
+					}
+				}
+			}
+
+			dirty_tiles.clear();
+			dirty_tiles.insert(next_dirty_tiles.begin(), next_dirty_tiles.end());
+		}
+	}
 };
 
 #endif /* LANDSCAPE_UTIL_H */
