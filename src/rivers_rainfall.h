@@ -74,6 +74,14 @@ static const int MIN_WIDER_VALLEYS_RANDOMNESS = 0;              ///< Minimum val
 static const int DEF_WIDER_VALLEYS_RANDOMNESS = 1000;           ///< Default value for wider rivers randomness
 static const int MAX_WIDER_VALLEYS_RANDOMNESS = 65535;          ///< Maximum value for wider river randomness
 
+static const uint MIN_SMALL_OCEANS_REMOVAL_FACTOR = 0;          ///< 0 means turn the feature off, do not remove small oceans
+static const uint DEF_SMALL_OCEANS_REMOVAL_FACTOR = 1000;
+static const uint MAX_SMALL_OCEANS_REMOVAL_FACTOR = INT32_MAX;
+
+static const uint MIN_SMALL_BASINS_REMOVAL_LIMIT = 0;
+static const uint DEF_SMALL_BASINS_REMOVAL_LIMIT = 13;
+static const uint MAX_SMALL_BASINS_REMOVAL_LIMIT = 1000;
+
 static const uint MIN_RAINFALL_PROBABILITY = 0;                 ///< Probabilities are scaled in the range 0 ... 1000.
 static const uint MAX_RAINFALL_PROBABILITY = 1000;              ///< Probabilities are scaled in the range 0 ... 1000.
 
@@ -106,6 +114,24 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
  *  what the algorithm did for which tile.
  */
 extern int *_number_of_lower_tiles;
+
+/** ConnectedComponentCalculator for finding all tiles of a basin, i.e. a connected component
+ *  of (straight) neighbor tiles that are all below some given heightlevel.
+ */
+struct BasinConnectedComponentCalculator : public ConnectedComponentCalculator<std::set<TileIndex> > {
+
+private:
+	/* Consider tiles smaller than this value */
+	int max_height;
+
+protected:
+	virtual bool RecognizeTile(std::set<TileIndex> &tiles, TileIndex tile, TileIndex prev_tile);
+	inline virtual void StoreInContainer(std::set<TileIndex> &tiles, TileIndex tile) { tiles.insert(tile); }
+
+public:
+	BasinConnectedComponentCalculator() : ConnectedComponentCalculator(false) { }
+	inline void SetMaxHeight(int max_height) { this->max_height = max_height; }
+};
 
 /** This ConnectedComponentCalculator calculates a connected component for use in a NumberOfLowerHeightIterator.
  *  That calculator calculates for each tile on map the number of lower tiles reachable from that tile by going
@@ -222,6 +248,7 @@ struct RainfallRiverGenerator : public RiverGenerator {
 
 private:
 	int *CalculateNumberOfLowerTiles(NumberOfLowerHeightIterator *lower_iterator);
+	void RemoveSmallBasins(int *number_of_lower_tiles);
 
 public:
 	RainfallRiverGenerator() {}

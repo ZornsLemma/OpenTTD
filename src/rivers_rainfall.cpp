@@ -34,6 +34,48 @@
 int *_number_of_lower_tiles = NULL;
 
 /* ================================================================================================================== */
+/* ============================ BasinConnectedComponentCalculator =================================================== */
+/* ================================================================================================================== */
+
+bool BasinConnectedComponentCalculator::RecognizeTile(std::set<TileIndex> &tiles, TileIndex tile, TileIndex prev_tile)
+{
+	if (tiles.find(tile) == tiles.end()) {
+		int height;
+		Slope slope = GetTileSlope(tile, &height);
+
+		if (height >= this->max_height) {
+			/* Don´t recognize tiles that are higher than the potential basin we inspect */
+			return false;
+		} else {
+			/* Only consider straight neighbors, and stop if both tiles are at the same height, but share a raised edge.
+			 */
+			bool west_corner_raised = ((slope & SLOPE_W) == SLOPE_W);
+			bool east_corner_raised = ((slope & SLOPE_E) == SLOPE_E);
+			bool north_corner_raised = ((slope & SLOPE_N) == SLOPE_N);
+			bool south_corner_raised = ((slope & SLOPE_S) == SLOPE_S);
+
+			Slope prev_slope = GetTileSlope(prev_tile);
+			bool prev_west_corner_raised = ((prev_slope & SLOPE_W) == SLOPE_W);
+			bool prev_east_corner_raised = ((prev_slope & SLOPE_E) == SLOPE_E);
+			bool prev_north_corner_raised = ((prev_slope & SLOPE_N) == SLOPE_N);
+			bool prev_south_corner_raised = ((prev_slope & SLOPE_S) == SLOPE_S);
+
+			int x = TileX(tile);
+			int y = TileY(tile);
+			int prev_x = TileX(prev_tile);
+			int prev_y = TileY(prev_tile);
+
+			return (   (x == prev_x - 1 && y == prev_y && !(west_corner_raised && south_corner_raised && prev_east_corner_raised && prev_north_corner_raised))
+					|| (x == prev_x && y == prev_y + 1 && !(north_corner_raised && west_corner_raised && prev_south_corner_raised && prev_east_corner_raised))
+				    || (x == prev_x + 1 && y == prev_y && !(east_corner_raised && north_corner_raised && prev_west_corner_raised && prev_south_corner_raised))
+					|| (x == prev_x && y == prev_y - 1 && !(south_corner_raised && east_corner_raised && prev_north_corner_raised && prev_west_corner_raised)));
+		}
+	} else {
+		return false;
+	}
+}
+
+/* ================================================================================================================== */
 /* ====================== NumberOfLowerConnectedComponentCalculator ================================================= */
 /* ================================================================================================================== */
 
@@ -371,8 +413,68 @@ int *RainfallRiverGenerator::CalculateNumberOfLowerTiles(NumberOfLowerHeightIter
 	return lower_iterator->GetNumberOfLowerTiles();
 }
 
+/* ========================================= */
+/* ========= Removing tiny basins ========== */
+/* ========================================= */
+
+/** This function removes small basins, based on the respective config settings
+ *  (game_creation.rainfall.small_oceans_removal_factor and game_creation.rainfall.small_basins_removal_limit).
+ *
+ *  In detail, basins at height zero will be removed if they are smaller than MapSize() / small_oceans_removal_factor,
+ *  higher basins if they are smaller than small_basins_removal_limit.  Removing in both cases works by raising land.
+ *
+ *  The reason for doing so is as follows:
+ *  - Especially in tgp generated worlds, tiny oceans can act as endpoints for huge rivers, which looks quite unrealistic.
+ *  - Tiny non ocean basins act as lake centers.  They can trigger lakes, where in fact a river flowing along them
+ *    would look more realistic.  Additionally, the lake definition algorithms don´t perform that well when being
+ *    executed for thousands of lakes.
+ */
+void RainfallRiverGenerator::RemoveSmallBasins(int *number_of_lower_tiles)
+{
+	BasinConnectedComponentCalculator *connected_component_calculator = new BasinConnectedComponentCalculator();
+
+	std::set<TileIndex> raised_tiles = std::set<TileIndex>();
+
+	for (TileIndex tile = 0; tile < MapSize(); tile++) {
+		if (number_of_lower_tiles[tile] == 0 && raised_tiles.find(tile) == raised_tiles.end()) {
+			/* The given tile is at the bottom of some basin. */
+
+			int max_height = GetTileZ(tile) + 1;
+			uint max_size;
+			if (max_height == 1) {
+				max_size = _settings_newgame.game_creation.rainfall.small_oceans_removal_factor > 0 ? MapSize() / _settings_newgame.game_creation.rainfall.small_oceans_removal_factor : 0;
+			} else {
+				max_size = _settings_newgame.game_creation.rainfall.small_basins_removal_limit;
+			}
+
+			/* Calculate a connected component, of at most the given limit. */
+			std::set<TileIndex> basin_tiles = std::set<TileIndex>();
+			connected_component_calculator->SetMaxHeight(max_height);
+			connected_component_calculator->StoreConnectedComponent(basin_tiles, tile, max_size);
+
+			/* If the calculated component is smaller than the limit, we know that we stopped because we did not find further tiles,
+			 * not because we reached the limit. */
+			if (basin_tiles.size() < max_size) {
+
+				/* Thus, raise the tiles */
+				for (std::set<TileIndex>::const_iterator it = basin_tiles.begin(); it != basin_tiles.end(); it++) {
+					TileIndex basin_tile = *it;
+					raised_tiles.insert(basin_tile);
+
+					TerraformTileToSlope(basin_tile, max_height, SLOPE_FLAT);
+
+					DEBUG(map, 9, "Basin near tile (%i,%i): Raising tile (%i,%i)", TileX(tile), TileY(tile), TileX(basin_tile), TileY(basin_tile));
+				}
+			} else {
+				DEBUG(map, 9, "Basin near tile (%i,%i): Will not raise basin, too big.", TileX(tile), TileY(tile));
+			}
+		}
+	}
+}
+
 /** The generator function.  The following steps are performed in this order when generating rivers:
  *  (1) Calculate a height index, for fast iteration over all tiles of a particular heightlevel.
+ *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
  */
 void RainfallRiverGenerator::GenerateRivers()
 {
@@ -380,8 +482,9 @@ void RainfallRiverGenerator::GenerateRivers()
 	HeightIndex *height_index = new HeightIndex();
 	NumberOfLowerHeightIterator *lower_iterator = new NumberOfLowerHeightIterator(height_index, false);
 
-	/* (2) Calculate number-of-lower-tiles */
+	/* (2) Remove tiny basins, based on the number-of-lower-tiles measure */
 	int *calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
+	this->RemoveSmallBasins(calculated_number_of_lower_tiles);
 
 	/* Debug code: Store the results of the iterators in a public array, to be able to query them in the LandInfoWindow.
 	 *             Without that possibility, debugging those values would be really hard. */

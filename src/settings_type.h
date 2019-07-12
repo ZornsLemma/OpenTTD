@@ -281,6 +281,9 @@ struct RainfallSettings {
 	int16 wider_valleys_multiplier;                       ///< Multiplier on river width; the resulting number of tiles will be inspected at each side of the river
 	int16 wider_valleys_randomness;                       ///< Randomness when deciding on the width of wider valleys.
 
+	uint32 small_oceans_removal_factor;                    ///< Small oceans will be removed by terraforming, if they are smaller than MapSize() divided by this value.  Set to zero to turn this feature off.
+	uint16 small_basins_removal_limit;                     ///< Small basins will be removed by terraforming, if they are smaller than this number of tiles.
+
 	uint16 lake_outflow_canyon_probability;                ///< probability (measured in 1/1000) that an outflow canyon is digged for the lake at hand
 	uint16 lake_reduce_to_guaranteed_probability;          ///< probability (measured in 1/1000) that a lake is reduced to its guaranteed tiles
 	uint16 lake_island_probability;                        ///< probability (measured in 1/1000) that a lake tile becomes an island center

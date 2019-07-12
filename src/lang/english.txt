@@ -1335,6 +1335,10 @@ STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_ENABLED               :Enable wider va
 STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_ENABLED_HELPTEXT      :When generating landscape based on a heightmap of a mountainious area, with deep valleys, valleys in the generated landscape tend to be very small.  Enable this setting to automatically make all valleys having a river wider, to gain more usable space for things like cities.
 STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_MULTIPLIER            :Wider valleys multiplier
 STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_MULTIPLIER_HELPTEXT   :On each side of the river, up to this number of tiles (multiplied with the width of the river) will be lowered.  The new height of the tiles is chosen in a probabilistic manner; the nearer a tile is to the river, the higher the probability that it receives a low height.
+STR_CONFIG_SETTING_RAINFALL_SMALL_OCEANS_REMOVAL                :Tiny ocean removal factor
+STR_CONFIG_SETTING_RAINFALL_SMALL_OCEANS_REMOVAL_HELPTEXT       :Remove tiny oceans if they are smaller than the map size divided by this factor.
+STR_CONFIG_SETTING_RAINFALL_SMALL_BASINS_REMOVAL                :Tiny basins removal factor
+STR_CONFIG_SETTING_RAINFALL_SMALL_BASINS_REMOVAL_HELPTEXT       :Remove tiny basins if they are smaller than this number of tiles.
 STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_RANDOMNESS            :Wider valleys randomness
 STR_CONFIG_SETTING_RAINFALL_WIDER_VALLEYS_RANDOMNESS_HELPTEXT   :Randomness for wider valleys.  0 means, always use half the maximum width defined by the multiplier, 1000 means use the default number of step to modify this value for 16x16 tile sections.
 STR_CONFIG_SETTING_RAINFALL_LAKE_CANYON_PROB                    :Probability for lake outflow canyon
