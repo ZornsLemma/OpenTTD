@@ -1248,6 +1248,7 @@ private:
 							   int *river_map, int *river_iteration);
 	void FixUpwardsRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info);
 	void TryLinkRiversWithOcean(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info);
+	void FixLowerTerrainNearRivers(byte *water_info, std::map<int, River*> &id_to_river);
 
 	bool IsIsolatedCorner(TileIndex neighbor_tiles[DIR_COUNT], Direction corner_direction, Direction adjacent_direction_one, Direction adjacent_direction_two);
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);

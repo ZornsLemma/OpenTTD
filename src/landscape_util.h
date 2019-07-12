@@ -309,4 +309,28 @@ public:
 	inline int GetIteration() { return this->iteration; }
 };
 
+/** A breadth first search, that, given some set of start tiles, scans a number of
+ *  tiles in a given height interval (in terms of GetTileZ).  Stops after at most the given
+ *  number of breadth first search iterations.
+ */
+struct HeightIntervalBreadthFirstSearch : public BreadthFirstSearch {
+private:
+	int max_iteration;               ///< Maximum number of breadth first search iterations
+	int min_height;                  ///< Minimum allowed height, in terms of GetTileZ
+	int max_height;                  ///< Maximum allowed height, in terms of GetTileZ
+	std::set<TileIndex> found_tiles; ///< Found tiles so far
+
+protected:
+	virtual bool ProcessTile(TileIndex tile) { return false; }
+	virtual void StoreNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
+	virtual bool TakeNeighborTileIntoAccount(TileIndex tile) { return true; }
+
+public:
+	HeightIntervalBreadthFirstSearch(int max_iteration) : max_iteration(max_iteration), min_height(0), max_height(INT32_MAX) { this->found_tiles = std::set<TileIndex>(); }
+	virtual ~HeightIntervalBreadthFirstSearch() {}
+
+	void ReInit(int min_height, int max_height) { this->found_tiles.clear(); this->min_height = min_height; this->max_height = max_height; }
+	std::set<TileIndex>* GetFoundTiles() { return &this->found_tiles; }
+};
+
 #endif /* LANDSCAPE_UTIL_H */

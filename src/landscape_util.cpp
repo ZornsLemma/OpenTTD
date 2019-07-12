@@ -630,3 +630,25 @@ bool BreadthFirstSearch::DoPerformSearch(std::set<TileIndex> &dirty_tiles)
 
 	return false;
 }
+
+void HeightIntervalBreadthFirstSearch::StoreNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT])
+{
+	if (this->GetIteration() < this->max_iteration) {
+		StoreAllNeighborTiles(tile, neighbor_tiles);
+		for (int n = DIR_BEGIN; n < DIR_END; n++) {
+			TileIndex neighbor_tile = neighbor_tiles[n];
+			if (neighbor_tile != INVALID_TILE) {
+				if (this->found_tiles.find(neighbor_tile) != this->found_tiles.end()) {
+					neighbor_tiles[n] = INVALID_TILE;
+				} else {
+					int height = GetTileZ(neighbor_tile);
+					if (height < this->min_height || height > this->max_height) {
+						neighbor_tiles[n] = INVALID_TILE;
+					} else {
+						this->found_tiles.insert(neighbor_tile);
+					}
+				}
+			}
+		}
+	}
+}

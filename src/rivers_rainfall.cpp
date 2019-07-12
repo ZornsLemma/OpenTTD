@@ -5387,6 +5387,74 @@ void RainfallRiverGenerator::TryLinkRiversWithOcean(int *river_map, int *river_i
 }
 
 /* ========================================================= */
+/* =========== Raise lower terrain near rivers ============= */
+/* ========================================================= */
+
+/** This function raises lower terrain near a river to the river height.  The aim is avoiding the impression of "why does it stay at the top,
+ *  and doesn´t flow down that slope?".
+ */
+void RainfallRiverGenerator::FixLowerTerrainNearRivers(byte *water_info, std::map<int, River*> &id_to_river)
+{
+	HeightIntervalBreadthFirstSearch *search = new HeightIntervalBreadthFirstSearch(3);
+
+	for (std::map<int, River*>::const_iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
+		River *river = it->second;
+
+		int curr_height = _settings_game.construction.max_heightlevel + 1;
+		std::vector<TileIndex> curr_height_tiles = std::vector<TileIndex>();
+
+		/* Step through the river.tiles vector, and once after a consecutive series of
+		 * tiles of the same height, a tile of another height enters the scene,
+		 * find relevant tiles using a breadth first search, with the river tiles of
+		 * the previous heightlevel as start tiles.
+		 * Take care that we don´t miss the last heightlevel, i.e. process the tiles
+	     * always, if the last index of the tiles vector is reached.
+		 */
+		uint last_n = river->tiles.size() - 1;
+		for (uint n = 0; n < river->tiles.size(); n++) {
+			TileIndex tile = river->tiles[n];
+
+			int height;
+			Slope slope = GetTileSlope(tile, &height);
+
+			if (curr_height_tiles.size() == 0) {
+				curr_height = height;
+			} else if (curr_height != height || n == last_n) {
+				/* Only refer to tiles at one heightlevel lower than the river height.  We could theoretically terraform higher multi-tile slopes
+				 * either, but that has the danger to actually damage something.  E.g., if a side river flows parallel over the huge valley for a
+				 * short time.  In such a case, we don´t want to generate a dam inside the huge valley.
+				 */
+				search->ReInit(curr_height - 1, curr_height - 1);
+				search->PerformSearch(curr_height_tiles);
+
+				std::set<TileIndex>* found_tiles = search->GetFoundTiles();
+				for (std::set<TileIndex>::const_iterator tiles_it = found_tiles->begin(); tiles_it != found_tiles->end(); tiles_it++) {
+					TileIndex found_tile = *tiles_it;
+
+					if (!WasProcessed(water_info, found_tile) && !IsTileType(found_tile, MP_WATER)) {
+						TerraformerState terraformer_state;
+
+						/* Assure that the terraforming doesn´t touch river tiles. */
+						bool success = SimulateTerraformTileToSlope(found_tile, curr_height, SLOPE_FLAT, terraformer_state);
+						if (success && !AreAnyWaterTilesAffected(terraformer_state, water_info)) {
+							ExecuteTerraforming(terraformer_state);
+						}
+					}
+				}
+
+				curr_height_tiles.clear();
+				curr_height = height;
+			}
+			if (slope == SLOPE_FLAT) {
+				curr_height_tiles.push_back(tile);
+			}
+		}
+	}
+
+	delete search;
+}
+
+/* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
 
@@ -5814,6 +5882,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  * (15) Set up connections between the logical rivers.
  * (16) Get rid of rivers flowing upwards.
  * (17) Link rivers with the ocean.
+ * (18) Raise lower terrain near rivers, to avoid the picture of "why doesn´t it flow down there?"
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
@@ -5926,6 +5995,12 @@ void RainfallRiverGenerator::GenerateRivers()
      *      Thus, the connection between a river and the ocean it flows to is often rather weak at this point.
 	 */
 	this->TryLinkRiversWithOcean(river_map, river_iteration, id_to_river, water_flow, water_info);
+
+	/* (18) Sometimes, lower terrain is located near a river, but the river stays at the higher heightlevel
+     *      for some tiles.  This behaviour is caused by the discrete nature of tiles in OpenTTD, and the need
+     *      to find or terraform slopes suitable for river.  This step raises such terrain.
+     */
+	this->FixLowerTerrainNearRivers(water_info, id_to_river);
 
 	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);
