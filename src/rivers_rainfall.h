@@ -119,6 +119,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_FINETUNE_TILES_SUMMARY_LOG_LEVEL 9
 #define RAINFALL_FINETUNE_TILES_FULL_LOG_LEVEL 9
 #define RAINFALL_FLOW_MODIFICATION_LOG_LEVEL 9
+#define RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -145,6 +146,8 @@ public:
 	BasinConnectedComponentCalculator() : ConnectedComponentCalculator(false) { }
 	inline void SetMaxHeight(int max_height) { this->max_height = max_height; }
 };
+
+struct DefineLakesIterator;
 
 /** This ConnectedComponentCalculator calculates a connected component for use in a NumberOfLowerHeightIterator.
  *  That calculator calculates for each tile on map the number of lower tiles reachable from that tile by going
@@ -304,6 +307,8 @@ inline WaterType GetWaterType(byte *water_info, TileIndex tile) { return (WaterT
 inline void SetWaterType(byte *water_info, TileIndex tile, WaterType water_type) { SB(water_info[tile], 3, 3, water_type); }
 
 TileIndex AddFlowDirectionToTile(TileIndex tile, byte water_info);
+TileIndex AddDirectionToTile(TileIndex tile, Direction direction);
+TileIndex GetLakeCenterForTile(TileIndex tile, byte *water_info);
 byte GetWaterInfoDirection(TileIndex source, TileIndex dest);
 
 /** Returns the flow direction at the given tile.
@@ -410,6 +415,9 @@ inline void DeclareRiver(byte *water_info, TileIndex tile) { SetWaterType(water_
 inline bool IsRiver(byte *water_info, TileIndex tile) { return GetWaterType(water_info, tile) == WI_RIVER; }
 
 inline bool IsWaterTile(byte *water_info, TileIndex tile) { return IsRiver(water_info, tile) || IsLakeCenter(water_info, tile) || IsOrdinaryLakeTile(water_info, tile); }
+
+inline void MarkGuaranteed(byte *water_info, TileIndex tile) { SetBit(water_info[tile], 6); }
+inline bool IsGuaranteed(byte *water_info, TileIndex tile) { return GB(water_info[tile], 6, 1); }
 
 inline void MarkProcessed(byte *water_info, TileIndex tile) { SetBit(water_info[tile], 7); }
 inline void MarkNotProcessed(byte *water_info, TileIndex tile) { ClrBit(water_info[tile], 7); }
@@ -772,7 +780,6 @@ public:
 	inline void SetExcludedLake(Lake *excluded_lake) { this->excluded_lake = excluded_lake; }
 };
 
-struct DefineLakesIterator;
 struct LakeDefinitionState;
 
 /** Information about processing one particular Lake during lake definition.
@@ -971,6 +978,9 @@ private:
 	void PrepareRiversAndLakes(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, std::vector<TileWithValue> &extra_river_tiles);
 	void AddExtraRiverTilesToWaterTiles(std::vector<TileWithHeightAndFlow> &water_tiles, std::vector<TileWithValue> &extra_river_tiles);
 	void GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, byte *water_info);
+
+	void MarkCornerTileGuaranteed(int *water_flow, byte *water_info, std::set<TileIndex>* lake_tiles, std::set<TileIndex> &guaranteed_water_tiles, TileIndex tile, Direction direction,
+						  Direction alternative_direction_one, Direction alternative_direction_two);
 
 	void StoreNeighborTilesPlannedForWater(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info);
 	bool IsInclinedSlopePossible(TileIndex tile, TileIndex water_neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info, Direction direction, Slope slope, Slope desired_slope, int min_diagonal_height,

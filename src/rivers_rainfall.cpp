@@ -444,6 +444,44 @@ TileIndex AddDirectionToTile(TileIndex tile, Direction direction)
 	}
 }
 
+/** If the flow starting at the given tile ends up in a lake, this function returns the (active or consumed) lake center tile
+ *  where it ends.  If flow ends elsewhere (e.g. in the sea, or at the map border), INVALID_TILE is returned.
+ */
+TileIndex GetLakeCenterForTile(TileIndex tile, byte *water_info)
+{
+	/* Flow is initially generated non-circular.  We only stick to that rule until
+     * after modifying flow.  In lake/river preparation, we use flow directions
+	 * for finding out the lake center tile for some tile (this function), but at the
+	 * same time do river completion (adding straight neighbor tiles in terms of
+	 * diagonal flow) that in corner cases can already disturb flow.
+	 * (in detail, this applies to lake centers that did not gain enough flow
+	 *  for actually becoming water - if those are declared river, they keep their
+	 *  (invalid) flow direction north, and thus may generate a cycle).
+	 * This shouldn´t be harmful for what we do using this function (setting up
+     * guaranteed lake tiles to keep a lake connected during island generation),
+	 * but nevertheless, we need to take care not to run into a infinite loop here.
+	 *
+	 * In summary, keeping track about already seen tiles here is the probably best
+	 * solution for getting rid of that corner case problem.
+	 */
+	std::set<TileIndex> tiles_seen = std::set<TileIndex>();
+
+	while (tile != INVALID_TILE) {
+		if (IsLakeCenter(water_info, tile)) {
+			return tile;
+		} else if (IsTileType(tile, MP_WATER) || IsDisappearTile(water_info, tile)) {
+			return INVALID_TILE;
+		} else if (tiles_seen.find(tile) != tiles_seen.end()) {
+			return INVALID_TILE;
+		} else {
+			tiles_seen.insert(tile);
+			tile = AddFlowDirectionToTile(tile, water_info[tile]);
+		}
+	}
+
+	return tile;
+}
+
 /** Returns the direction from the source to the dest tile.
  *  @param source source tile
  *  @param dest dest tile
@@ -2180,6 +2218,11 @@ void RainfallRiverGenerator::SetExtraNeighborTilesProcessed(TileIndex water_neig
 {
 	if (add_tile) {
 		TileIndex tile = water_neighbor_tiles[direction];
+
+		/* Compare comment in GetLakeCenterForTile for information about a corner case related to that code.
+		 * (short: what we do about the case that we may enter this code with a lake center tile that did not gain
+		 *  enough flow to become a visible lake)
+		 */
 		DeclareRiver(water_info, tile);
 		MarkProcessed(water_info, tile);
 		extra_river_tiles.push_back(TileWithValue(tile, flow));
@@ -2219,14 +2262,222 @@ void RainfallRiverGenerator::PrepareLake(TileIndex tile, int *water_flow, byte *
 
 	std::set<TileIndex>* lake_tiles = lake->GetLakeTiles();
 
+	DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Will calculate guaranteed lake tiles for lake at (%i,%i)", TileX(tile), TileY(tile));
+ 	lake->PrintToDebug(RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, 9);
+
+	TileIndex outflow_tile = lake->GetOutflowTile();
+	if (outflow_tile == INVALID_TILE) {
+		std::set<TileIndex>::const_iterator lake_tiles_it = lake_tiles->begin();
+		std::advance(lake_tiles_it, RandomRange(lake_tiles->size()));
+		outflow_tile = *lake_tiles_it;
+		DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Choosing tile (%i,%i) as outflow tile by chance, for the sake of having a connected lake.", TileX(outflow_tile), TileY(outflow_tile));
+	}
+
+	/* Determine the inflow tiles of the lake, and at the same time, calculate the corresponding center tile.
+	 */
+	std::map<TileIndex, TileIndex> inflow_tile_to_center = std::map<TileIndex, TileIndex>();
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+	for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
+		TileIndex curr_tile = *it;
+		DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Inspecting lake tile (%i,%i)", TileX(curr_tile), TileY(curr_tile));
+
+		StoreAllNeighborTiles(curr_tile, neighbor_tiles);
+		for (int n = DIR_BEGIN; n < DIR_END; n++) {
+			if (neighbor_tiles[n] != INVALID_TILE
+				&& lake_tiles->find(neighbor_tiles[n]) == lake_tiles->end()
+				&& (outflow_tile == INVALID_TILE || outflow_tile != neighbor_tiles[n])
+				&& (    (IsRiver(water_info, neighbor_tiles[n]) && lake_tiles->find(AddFlowDirectionToTile(neighbor_tiles[n], water_info[neighbor_tiles[n]])) != lake_tiles->end())
+					 ||  IsOrdinaryLakeTile(water_info, neighbor_tiles[n])
+					 ||  IsConsumedLakeCenter(water_info, neighbor_tiles[n])
+					 || (IsActiveLakeCenter(water_info, neighbor_tiles[n]) && water_flow[neighbor_tiles[n]] >= _settings_newgame.game_creation.rainfall.flow_for_river))) {
+
+				DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, ".... Pre-considering tile (%i,%i) for inflow", TileX(curr_tile), TileY(curr_tile));
+				TileIndex center_tile = GetLakeCenterForTile(curr_tile, water_info);
+				if (center_tile != INVALID_TILE && lake_tiles->find(center_tile) != lake_tiles->end()) {
+					inflow_tile_to_center[curr_tile] = center_tile;
+					DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, ".... Considering tile (%i,%i) an inflow tile, corresponding center tile (%i,%i)", TileX(curr_tile), TileY(curr_tile),
+								  TileX(center_tile), TileY(center_tile));
+				}
+				break;
+			}
+		}
+	}
+
+	/* Afterwards, we maybe will improve using some heuristic algorithms.  They might add peninsulas and islands,
+     * dig the outflow lower into the terrain, maybe drop the lake at all and transform it into a river basin flowing
+	 * through a plain having the heightlevel of the lake surface.
+     *
+     * However, one thing is forbidden for those algorithms: They may not cut the connection between inflow and outflow.
+     * Thus, our aim here is calculating paths of guaranteed water tiles between inflow and outflow.
+     */
+
+	/* Keep track about what tiles we already declared to be guaranteed. */
+	std::set<TileIndex> guaranteed_water_tiles = std::set<TileIndex>();
+
+	/* Obviously, this is only necessary if there is actually an outflow.  Copy the inflow tiles, as the following
+	 * algorithm will step-wise empty the set, and the following lake modificators may need them.
+	 */
+	std::map<TileIndex, int> inflow_tile_to_flow = std::map<TileIndex, int>();
+	for (std::map<TileIndex, TileIndex>::const_iterator it = inflow_tile_to_center.begin(); it != inflow_tile_to_center.end(); it++) {
+		TileIndex inflow_tile = it->first;
+		TileIndex center_tile = it->second;
+
+		DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, ".... Processing inflow tile (%i,%i) with corresponding center (%i,%i)",
+					TileX(inflow_tile), TileY(inflow_tile), TileX(center_tile), TileY(center_tile));
+
+		TileIndex curr_tile = inflow_tile;
+		while (curr_tile != center_tile) {
+			/* If flow direction is diagonal, we make one of the corresponding corner tiles guaranteed, as this situation
+			 * might otherwise split up the lake.
+			 */
+			MarkCornerTileGuaranteed(water_flow, water_info, lake_tiles, guaranteed_water_tiles, curr_tile, DIR_E, DIR_NE, DIR_SE);
+			MarkCornerTileGuaranteed(water_flow, water_info, lake_tiles, guaranteed_water_tiles, curr_tile, DIR_W, DIR_NW, DIR_SW);
+			MarkCornerTileGuaranteed(water_flow, water_info, lake_tiles, guaranteed_water_tiles, curr_tile, DIR_N, DIR_NW, DIR_NE);
+			MarkCornerTileGuaranteed(water_flow, water_info, lake_tiles, guaranteed_water_tiles, curr_tile, DIR_S, DIR_SW, DIR_SE);
+
+			guaranteed_water_tiles.insert(curr_tile);
+			MarkGuaranteed(water_info, curr_tile);
+			DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "........ Marking (%i,%i) a guaranteed lake tile.", TileX(curr_tile), TileY(curr_tile));
+
+			curr_tile = AddFlowDirectionToTile(curr_tile, water_info[curr_tile]);
+		}
+
+		guaranteed_water_tiles.insert(center_tile);
+		MarkGuaranteed(water_info, center_tile);
+		DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "........ Marking (%i,%i) a guaranteed lake tile.", TileX(center_tile), TileY(center_tile));
+
+		if (outflow_tile != INVALID_TILE && DistanceManhattan(inflow_tile, center_tile) >= DistanceManhattan(inflow_tile, outflow_tile)) {
+			inflow_tile_to_flow[inflow_tile] = water_flow[inflow_tile];
+			DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Making (%i,%i) a guaranteed center with flow %i", TileX(inflow_tile), TileY(inflow_tile), water_flow[inflow_tile]);
+			DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, ".... Adding (%i,%i) to inflow_tile_to_flow since it is nearer to the outflow than to its center.",
+						TileX(inflow_tile), TileY(inflow_tile));
+		}
+		inflow_tile_to_flow[center_tile] = water_flow[center_tile];
+		DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Making (%i,%i) a guaranteed center with flow %i", TileX(center_tile), TileY(center_tile), water_flow[center_tile]);
+	}
+
+	/* Make paths towards the outflow_tile guaranteed. */
+	if (outflow_tile != INVALID_TILE) {
+		DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, ".... Outflow tile is (%i,%i), inflow tiles left: " PRINTF_SIZE "", TileX(outflow_tile), TileY(outflow_tile), inflow_tile_to_flow.size());
+
+		/* Guaranteed tiles on paths from an inflow tile towards the corresponding lake center tile */
+		std::set<TileIndex> guaranteed_tiles_for_inflow = std::set<TileIndex>();
+		guaranteed_tiles_for_inflow.insert(guaranteed_water_tiles.begin(), guaranteed_water_tiles.end());
+
+		/* In order to declare not too many tiles guaranteed, we want to offer them the possibility to join.  E.g. if two lake centers (active and consumed)
+		 * are located relatively close to each other, but far away from the outflow tile, they can largely share a path towards the outflow tile.
+		 * Register not every tile in that set (as this would become expensive in terms of computation), but at least some.
+		 */
+		std::set<TileIndex> candidate_endpoints = std::set<TileIndex>();
+		candidate_endpoints.insert(outflow_tile);
+
+		/* Proceed until all inflow tiles are processed. */
+		while (inflow_tile_to_flow.size() > 0) {
+			TileIndex nearest_outflow_tile = INVALID_TILE;
+
+			/* Choose an inflow tile to process, start with those with the biggest flow, to set up the paths for big rivers flowing
+			 * through a lake first, and then the paths for small side rivers.
+			 */
+			TileIndex chosen_inflow_tile = INVALID_TILE;
+			int max_flow = -1;
+			for (std::map<TileIndex, int>::const_iterator it = inflow_tile_to_flow.begin(); it != inflow_tile_to_flow.end(); it++) {
+				TileIndex curr_tile = it->first;
+				int curr_flow = it->second;
+				if (curr_flow > max_flow) {
+					max_flow = curr_flow;
+					chosen_inflow_tile = curr_tile;
+				}
+			}
+
+			/* If negative flow somehow enters the calculation, we might not choose any tile.
+			 * For the sake of robustness, just take the first tile in that case.
+			 * (deliberately no assertion, as a logger gives bigger chances to understand what might have gone wrong
+			 *  on a 1024x1024 map than just aborting.  And we can do something defined anyway).
+			 */
+			if (chosen_inflow_tile == INVALID_TILE) {
+				chosen_inflow_tile = inflow_tile_to_flow.begin()->first;
+				DEBUG(map, 0, "Warning: No inflow tile could be chosen, taking the first one at (%i,%i) mapped to flow %i",
+							  TileX(chosen_inflow_tile), TileY(chosen_inflow_tile), inflow_tile_to_flow[chosen_inflow_tile]);
+			}
+
+			/* Now find out the nearest candidate endpoint.  (either outflow tile, or some tile on a path). */
+			int distance = -1;
+			for (std::set<TileIndex>::const_iterator it2 = candidate_endpoints.begin(); it2 != candidate_endpoints.end(); it2++) {
+				int candidate_distance = DistanceManhattan(chosen_inflow_tile, *it2);
+				if (distance == -1 || distance < candidate_distance) {
+					distance = candidate_distance;
+					nearest_outflow_tile = *it2;
+				}
+			}
+
+			DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Making path from (%i,%i) to (%i,%i) with flow %i guaranteed",
+						  TileX(chosen_inflow_tile), TileY(chosen_inflow_tile), TileX(nearest_outflow_tile), TileY(nearest_outflow_tile), max_flow);
+
+			/* Calculate a path. */
+			std::vector<TileIndex> path = std::vector<TileIndex>();
+			bool path_found = RainfallRiverGenerator::CalculateLakePath(*lake_tiles, chosen_inflow_tile, nearest_outflow_tile, path, -1);
+			if (path_found) {
+				int flow = max_flow;
+				DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Path with " PRINTF_SIZE " tiles found", path.size());
+
+				/* Step through the path, and make tiles guaranteed. */
+				for (int z = 0; z < (int)path.size(); z++) {
+					TileIndex curr_tile = path[z];
+
+					/* Paths connect the center tiles with the outflow tile in that direction.
+					 * The center tiles were connected with the inflow tiles above.
+					 * If we find an already guaranteed lake tile, we want to stop, in order to declare as less tiles as possible guaranteed.
+					 * However, we need to exclude the case that we have found a tile on the path from an inflow tile to its center tile, since for such tiles,
+					 * we don´t have any guarantee that they are already connected with the outflow tile.
+					 */
+					if (guaranteed_water_tiles.find(curr_tile) != guaranteed_water_tiles.end() && guaranteed_tiles_for_inflow.find(curr_tile) == guaranteed_tiles_for_inflow.end()) {
+						break;
+					}
+
+					/* Choose some candiate endpoints, see above for a more detailed explanation. */
+					if (z > 0 && (z % 7 == 0)) {
+						candidate_endpoints.insert(path[z]);
+						DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, ".... Marking (%i,%i) a candidate endpoint", TileX(path[z]), TileY(path[z]));
+					}
+					if (lake->IsLakeTile(curr_tile)) {
+						/* The path might end in the outflow tile, which is not part of the lake.  Don´t declare that one
+						 * a guaranteed lake tile either.
+						 */
+						DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, ".... Marking (%i,%i) a guaranteed water tile", TileX(curr_tile), TileY(curr_tile));
+						guaranteed_water_tiles.insert(curr_tile);
+						MarkGuaranteed(water_info, curr_tile);
+						water_flow[curr_tile] = max(water_flow[curr_tile], flow);
+						DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Setting water_flow of guaranteed (%i,%i) to %i, based on flow %i of (%i,%i)",
+										TileX(curr_tile), TileY(curr_tile), water_flow[curr_tile], flow, TileX(chosen_inflow_tile), TileY(chosen_inflow_tile));
+					}
+				}
+			} else {
+				/* This should not happen, as our lakes are supposed to be connected (at least here, before potential islands etc. enter the scene).
+				 * Again: Deliberately no assertion.
+				 */
+				DEBUG(map, 0, "WARNING: No path could be found between (%i,%i) and (%i,%i), lake tiles are:", TileX(chosen_inflow_tile), TileY(chosen_inflow_tile),
+																											   TileX(nearest_outflow_tile), TileY(nearest_outflow_tile));
+				for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
+					DEBUG(map, 0, "(%i,%i)", TileX(*it), TileY(*it));
+				}
+			}
+
+			inflow_tile_to_flow.erase(chosen_inflow_tile);
+			DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Nearest_inflow_tile (%i,%i) has been processed", TileX(chosen_inflow_tile), TileY(chosen_inflow_tile));
+		}
+	}
+
 	/* Terraform all lake tiles to the surface height of the lake and perform some final bookkeeping. */
 	int surface_height = lake->GetSurfaceHeight();
+	DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Will terraform lake (%i,%i) to surface height %i", TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()), surface_height);
 	DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, "Will terraform lake (%i,%i) with " PRINTF_SIZE " lake tiles to height %i",
 			  TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()), lake_tiles->size(), surface_height);
 	for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
 		TileIndex lake_tile = *it;
 		TerraformTileToSlope(lake_tile, surface_height, SLOPE_FLAT);
 		extra_water_tiles.push_back(TileWithValue(lake_tile, water_flow[tile]));
+
+		DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, ".... Terraformed tile (%i,%i) to height %i", TileX(lake_tile), TileY(lake_tile), surface_height);
 
 		MarkProcessed(water_info, lake_tile);
 	}
@@ -2434,6 +2685,53 @@ void RainfallRiverGenerator::GenerateRiverTiles(std::vector<TileWithHeightAndFlo
 				MakeRiver(tile, Random());
 			} else {
 				DEBUG(map, 0, "WARNING: Tile (%i,%i) was marked to become water, but has wrong slope %s .... Ignored.", TileX(tile), TileY(tile), SlopeToString(GetTileSlope(tile)));
+			}
+		}
+	}
+}
+
+/* ========================================================= */
+/* ================ Guaranteed lake tiles ================== */
+/* ========================================================= */
+
+void RainfallRiverGenerator::MarkCornerTileGuaranteed(int *water_flow, byte *water_info, std::set<TileIndex>* lake_tiles, std::set<TileIndex> &guaranteed_water_tiles,
+													  TileIndex tile, Direction direction,
+													  Direction alternative_direction_one, Direction alternative_direction_two)
+{
+	if (GetFlowDirection(water_info, tile) == direction) {
+		TileIndex alternative_one = AddDirectionToTile(tile, alternative_direction_one);
+		if (lake_tiles->find(alternative_one) == lake_tiles->end()) {
+			alternative_one = INVALID_TILE;
+		}
+
+		TileIndex alternative_two = AddDirectionToTile(tile, alternative_direction_two);
+		if (lake_tiles->find(alternative_two) == lake_tiles->end()) {
+			alternative_two = INVALID_TILE;
+		}
+
+		if (alternative_one != INVALID_TILE) {
+			if (alternative_two != INVALID_TILE) {
+				if (RandomRange(2) == 0) {
+					guaranteed_water_tiles.insert(alternative_one);
+					MarkGuaranteed(water_info, alternative_one);
+				} else {
+					guaranteed_water_tiles.insert(alternative_two);
+					MarkGuaranteed(water_info, alternative_two);
+				}
+			} else {
+				guaranteed_water_tiles.insert(alternative_one);
+				MarkGuaranteed(water_info, alternative_one);
+			}
+		} else {
+			if (alternative_two != INVALID_TILE) {
+				guaranteed_water_tiles.insert(alternative_two);
+				MarkGuaranteed(water_info, alternative_two);
+			} else {
+				/* Ignore this case.  It typically occurs if a river flows into a lake, and out again, before finally ending up in the lake.
+				 * this is possible, as lake expansion doesn´t work along flow paths, but in a more random manner.
+				 * The case isn´t a problem either, as no lake modificator can ever discard a river tile, i.e. from player perspective there
+				 * will be a connection.
+				 */
 			}
 		}
 	}
