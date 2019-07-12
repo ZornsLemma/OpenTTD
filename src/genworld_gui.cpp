@@ -1220,6 +1220,7 @@ struct GenWorldStatus {
 	uint current;
 	uint total;
 	int timer;
+	bool no_total;
 };
 
 static GenWorldStatus _gws;
@@ -1310,8 +1311,14 @@ struct GenerateProgressWindow : public Window {
 
 				/* And say where we are in that class */
 				SetDParam(0, _gws.current);
-				SetDParam(1, _gws.total);
-				DrawString(r.left, r.right, r.top + FONT_HEIGHT_NORMAL + WD_PAR_VSEP_NORMAL, STR_GENERATION_PROGRESS_NUM, TC_FROMSTRING, SA_HOR_CENTER);
+				StringID str;
+				if (_gws.no_total) {
+					str = STR_GENERATION_PROGRESS_NUM_NO_TOTAL;
+				} else {
+					SetDParam(1, _gws.total);
+					str = STR_GENERATION_PROGRESS_NUM;
+				}
+				DrawString(r.left, r.right, r.top + FONT_HEIGHT_NORMAL + WD_PAR_VSEP_NORMAL, str, TC_FROMSTRING, SA_HOR_CENTER);
 		}
 	}
 };
@@ -1337,7 +1344,7 @@ void ShowGenerateWorldProgress()
 	new GenerateProgressWindow();
 }
 
-static void _SetGeneratingWorldProgress(GenWorldProgress cls, uint progress, uint total)
+static void _SetGeneratingWorldProgress(GenWorldProgress cls, uint progress, uint total, bool no_total = false)
 {
 	static const int percent_table[] = {0, 5, 14, 17, 20, 40, 60, 65, 80, 85, 95, 99, 100 };
 	assert_compile(lengthof(percent_table) == GWP_CLASS_COUNT + 1);
@@ -1348,14 +1355,15 @@ static void _SetGeneratingWorldProgress(GenWorldProgress cls, uint progress, uin
 
 	if (IsGeneratingWorldAborted()) HandleGeneratingWorldAbortion();
 
-	if (total == 0) {
+	if (!no_total && total == 0) {
 		assert(_gws.cls == _generation_class_table[cls]);
 		_gws.current += progress;
-		assert(_gws.current <= _gws.total);
+		assert(_gws.no_total || _gws.current <= _gws.total);
 	} else {
 		_gws.cls     = _generation_class_table[cls];
 		_gws.current = progress;
 		_gws.total   = total;
+		_gws.no_total = no_total;
 		_gws.percent = percent_table[cls];
 	}
 
@@ -1363,7 +1371,7 @@ static void _SetGeneratingWorldProgress(GenWorldProgress cls, uint progress, uin
 	if (!_network_dedicated && _gws.timer != 0 && _realtime_tick - _gws.timer < MODAL_PROGRESS_REDRAW_TIMEOUT) return;
 
 	/* Percentage is about the number of completed tasks, so 'current - 1' */
-	_gws.percent = percent_table[cls] + (percent_table[cls + 1] - percent_table[cls]) * (_gws.current == 0 ? 0 : _gws.current - 1) / _gws.total;
+	_gws.percent = percent_table[cls] + (_gws.no_total ? 0 : (percent_table[cls + 1] - percent_table[cls]) * (_gws.current == 0 ? 0 : _gws.current - 1) / _gws.total);
 
 	if (_network_dedicated) {
 		static uint last_percent = 0;
@@ -1414,6 +1422,11 @@ void SetGeneratingWorldProgress(GenWorldProgress cls, uint total)
 	_SetGeneratingWorldProgress(cls, 0, total);
 }
 
+void SetNoTotalGeneratingWorldProgress(GenWorldProgress cls)
+{
+	_SetGeneratingWorldProgress(cls, 0, 0, true);
+}
+
 /**
  * Increases the current stage of the world generation with one.
  * @param cls the current class we are in.
@@ -1424,5 +1437,5 @@ void SetGeneratingWorldProgress(GenWorldProgress cls, uint total)
 void IncreaseGeneratingWorldProgress(GenWorldProgress cls)
 {
 	/* In fact the param 'class' isn't needed.. but for some security reasons, we want it around */
-	_SetGeneratingWorldProgress(cls, 1, 0);
+	_SetGeneratingWorldProgress(cls, 1, 0, false);
 }
