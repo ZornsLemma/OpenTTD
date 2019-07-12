@@ -15,6 +15,7 @@
 #include "slope_func.h"
 #include "tile_map.h"
 #include "core/alloc_func.hpp"
+#include "core/random_func.hpp"
 
 #include "landscape_util.h"
 
@@ -314,6 +315,126 @@ void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[D
 	}
 }
 
+/** Returns the direction from the given source tile towards the given destination tile.
+ */
+Direction GetDirection(TileIndex source_tile, TileIndex dest_tile)
+{
+	int sx = TileX(source_tile);
+	int sy = TileY(source_tile);
+	int dx = TileX(dest_tile);
+	int dy = TileY(dest_tile);
+	if (dx < sx) {
+		if (dy < sy) {
+			return DIR_N;
+		} else if (dy == sy) {
+			return DIR_NE;
+		} else {
+			return DIR_E;
+		}
+	} else if (dx == sx) {
+		if (dy < sy) {
+			return DIR_NW;
+		} else if (dy == sy) {
+			assert(false);
+		} else {
+			return DIR_SE;
+		}
+	} else {
+		if (dy < sy) {
+			return DIR_W;
+		} else if (dy == sy) {
+			return DIR_SW;
+		} else {
+			return DIR_S;
+		}
+	}
+
+	/* Should never be reached.  All cases are handled above; here we only want to avoid the compiler warning. */
+	return DIR_W;
+}
+
+/*================================ Angles <--> DirectionIndices ===================================*/
+/*=================================================================================================*/
+
+/** Returns an angle (on the scale 0..360 degrees) from the given direction.  North is zero degrees, east 90 degrees, and so on.
+ */
+int GetAngleFromDirection(Direction direction)
+{
+	switch(direction) {
+		case DIR_N      : return 0;
+		case DIR_NE : return 45;
+		case DIR_E       : return 90;
+		case DIR_SE : return 135;
+		case DIR_S      : return 180;
+		case DIR_SW : return 225;
+		case DIR_W       : return 270;
+		case DIR_NW : return 315;
+		default: assert(false);
+				 /* Should never be reached.  But avoid the compiler warning. */
+				 return 0;
+	}
+}
+
+/** Derives a Direction from the given angle.  Each Direction is
+ *  assigned a region of size 45 degrees symmetric around the angle numbers used
+ *  in GetAngleFromDirection.
+ *  @param angle angle
+ *  @return the Direction as described
+ */
+Direction GetDirectionFromAngle(int angle)
+{
+	while (angle < 0) {
+		angle += 360;
+	}
+	angle = angle % 360;
+
+	if (angle < 158) {
+		if (angle < 68) {
+			return angle < 23 ? DIR_N : DIR_NE;
+		} else {
+			return angle < 113 ? DIR_E : DIR_SE;
+		}
+	} else if (angle < 338) {
+		if (angle < 248) {
+			return angle < 203 ? DIR_S : DIR_SW;
+		} else {
+			return angle < 293 ? DIR_W : DIR_NW;
+		}
+	} else {
+		return DIR_N;
+	}
+}
+
+/** Given an array of tiles, this function fills a passed array with those tiles, but sorted
+ *  by their closeness to the given angle.  Angle regions are as of GetDirectionFromAngle.
+ *  The decision wether first the neighbor tile in negative angle direction, or the corresponding
+ *  one in positive angle direction is added, is taken by random.
+ *  Note that the resulting array can contain INVALID_TILES, i.e. code using this function must
+ *  test for that.
+ *  @param tiles array of eight tiles
+ *  @param angle some angle
+ *  @param sorted_tiles array to be filled as described
+ */
+void SortTilesByAngle(TileIndex tiles[DIR_COUNT], int angle, TileIndex sorted_tiles[DIR_COUNT])
+{
+	int n = 0;
+	Direction start_direction = GetDirectionFromAngle(angle);
+	sorted_tiles[n] = tiles[start_direction];
+	n++;
+	Direction curr_prev_direction = start_direction;
+	Direction curr_next_direction = start_direction;
+	for (int z = 0; z < 3; z++) {
+		curr_prev_direction = GetPrevDirection(curr_prev_direction);
+		curr_next_direction = GetNextDirection(curr_next_direction);
+		int r = RandomRange(2);
+		sorted_tiles[n] =     r == 0 ? tiles[curr_prev_direction] : tiles[curr_next_direction];
+		sorted_tiles[n + 1] = r == 0 ? tiles[curr_next_direction] : tiles[curr_prev_direction];
+		n += 2;
+	}
+	curr_prev_direction = GetPrevDirection(curr_prev_direction);
+	sorted_tiles[n] = tiles[curr_prev_direction];
+}
+
 /*=================================== Debug helper functions ======================================*/
 /*=================================================================================================*/
 
@@ -344,6 +465,20 @@ const char* SlopeToString(Slope slope)
 		case SLOPE_STEEP_S:  return "SLOPE_STEEP_S";
 		case SLOPE_STEEP_E:  return "SLOPE_STEEP_E";
 		case SLOPE_STEEP_N:  return "SLOPE_STEEP_N";
+		default: return "Unknown";
+	}
+}
+
+const char* DirectionToString(Direction direction) {
+	switch(direction) {
+		case DIR_N      : return "NORTH";
+		case DIR_NE : return "NORTH_EAST";
+		case DIR_E       : return "EAST";
+		case DIR_SE : return "SOUTH_EAST";
+		case DIR_S      : return "SOUTH";
+		case DIR_SW : return "SOUTH_WEST";
+		case DIR_W       : return "WEST";
+		case DIR_NW : return "NORTH_WEST";
 		default: return "Unknown";
 	}
 }

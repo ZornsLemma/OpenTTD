@@ -118,6 +118,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_TERRAFORM_FOR_RIVERS_LOG_LEVEL 9
 #define RAINFALL_FINETUNE_TILES_SUMMARY_LOG_LEVEL 9
 #define RAINFALL_FINETUNE_TILES_FULL_LOG_LEVEL 9
+#define RAINFALL_FLOW_MODIFICATION_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -464,6 +465,96 @@ public:
 	 *  while still using the fetched array.
 	 */
 	inline byte* GetWaterInfo() { return this->water_info; }
+};
+
+/** FlowModificators modify an already calculated flow on the small scale.  They are necessary, because
+ *  the NumberOfLowerTilesHeightIterator and CalculateFlowIterator above tend to calculate flow that
+ *  proceeds to the sea / to some lake as fast as possible.  Thus, their raw result doesn´t look like
+ *  real world rivers.
+ *
+ *  A FlowModificator is meant to be called a lot of times in a row.  In each step, it chooses some tile
+ *  along a river, and redirects flow starting at that tile on the small scale.  E.g., it might change
+ *  flow originally flowing straight to the sea to flow three tiles to the left, two to the right, and
+ *  then it proceeds straight.
+ *
+ *  Note that FlowModificators always have to preserve correctness of the calculated flow, i.e. they
+ *  may not produce any cycle, nor may the flow flow upwards afterwards.  In fact, as they are called
+ *  many times in a row, aborting a particular modification because it would lead to an incorrect result
+ *  is a perfectly usual step in such an algorithm.
+ */
+struct FlowModificator {
+
+protected:
+	int *water_flow;
+	byte *water_info;
+
+public:
+	FlowModificator(int *water_flow, byte *water_info) { this->water_flow = water_flow;	this->water_info = water_info; }
+
+	virtual ~FlowModificator() {}
+
+	/** Modifies flow at some random place of map.  What exactly this means
+     *  is subclass-specific.  As this method is meant to be called
+     *  many times in a loop, the changes should be rather local, limited ones.
+	 *  @return wether none of the invariants of flow modification have been violated
+     */
+	virtual bool ModifyFlow(int min_equal_directions) = 0;
+};
+
+/** A CurveFlowModificator modifies flow by letting it flow along simulated paths that sometimes change direction.
+ *  To achieve this, in any step of a CurveFlowModificator run, it maintains an current angle, and a phase.
+ *  The phase can be left, right or straight.
+ *
+ *  For example: A run may look as follows:
+ *  Start with angle 90 degrees (i.e., south-east).  Switch to phase left. Go one step south-east.  Decrease
+ *  angle by 34 degrees to 56 degrees, as we go left.  Go one step east, as 56 is nearer to 45 than to 90.
+ *  Decrease angle by another 29 degrees to 27 degrees.  Go one step south-east, as the actually desired
+ *  direction east would end in going upwards, thus south-east is the next-better direction.  Decrease
+ *  angle by another 44 degrees to -17 degrees.  Go one step north-east, and change phase to straight.
+ *
+ *  Now, in phase straight, angle is sometimes decreased and sometimes increased, to get a roughly straight
+ *  path, but with small random curves to the left or to the right.  Phase right, would finally mean
+ *  increasing the angle.
+ *
+ *  The path calculated using the algorithm above ignores flow and number of lower tiles completely.  Thus,
+ *  there is always some chance that we introduce a cycle.  This happens e.g. if the path finds an inflow tile
+ *  of the start tile.
+ *
+ *  To cope with that, the above algorithm is performed for a random number of steps, or until absolutely no tile
+ *  for proceeding can be found, or until there is a cycle in the new path itself.  Then, a postprocessing
+ *  step proceeds along the path, redirects flow for each of the tiles (i.e. subtract flow of the current tile
+ *  from all tiles on the old path, and add it for all tiles of the new path), and at the same time
+ *  checks wether there is any cycle.
+ *
+ *  Finally flow modification until the last tile that doesn´t introduce a cycle is performed.
+ *
+ *  Once this algorithm is run some thousand times for a map of e.g. 512x512, the originally straight rivers have
+ *  turned into quite real-world-like curvaceous ones.
+ *
+ *  Note that although this algorithm calculates river paths of limited length, it would not be suitable
+ *  for replacing the number of lower tiles based initial calculation.  Simply because its behaviour
+ *  in a huge plain or a huge flat valley is a purely local one, i.e. it steps somewhere, somewhat predetermined
+ *  by the flow direction at its start tile, but hasn´t any knowledge wether its path goes down the valley or up.
+ */
+struct CurveFlowModificator : public FlowModificator {
+
+private:
+	enum Phase {
+		PHASE_STRAIGHT = 0,
+		PHASE_LEFT = 1,
+		PHASE_RIGHT = 2
+	};
+
+	const char* PhaseToString(Phase phase);
+	bool IsSuitableFlowTile(TileIndex tile);
+
+	TileIndex FindStartTile(int min_equal_directions);
+	bool FinishFlowModification(TileIndex tile);
+	TileIndex GetNextTile(TileIndex tile, int angle);
+
+public:
+	CurveFlowModificator(int *water_flow, byte *water_info);
+	virtual bool ModifyFlow(int min_equal_directions);
 };
 
 struct LakeDefinitionRun;
@@ -867,6 +958,8 @@ private:
 	int GetNumberOfAscendedSlopes(Slope slope);
 	void DeclareNeighborTileWater(TileIndex water_neighbor_tiles[DIR_COUNT], TileIndex neighbor_tiles[DIR_COUNT], bool add_tile, Direction direction);
 	void SetExtraNeighborTilesProcessed(TileIndex water_neighbor_tiles[DIR_COUNT], byte *water_info, std::vector<TileWithValue> &extra_river_tiles, bool add_tile, Direction direction, int flow);
+
+	void ModifyFlow(int *water_flow, byte *water_info);
 
 	void PrepareLake(TileIndex tile, int *water_flow, byte *water_info, DefineLakesIterator *lake_iterator, std::vector<TileWithValue> &extra_water_tiles);
 	void ChooseTileForExtraRiver(TileIndex tile,

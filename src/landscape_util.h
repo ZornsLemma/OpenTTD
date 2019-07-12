@@ -146,13 +146,23 @@ Direction GetOppositeDirection(Direction direction_index);
 
 #define EMPTY_NEIGHBOR_TILES { INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE, INVALID_TILE }
 
+inline Direction GetPrevDirection(Direction direction_index) { return direction_index == DIR_N ? DIR_NW : (Direction)(direction_index - 1); }
+inline Direction GetNextDirection(Direction direction_index) { return direction_index == DIR_NW ? DIR_N : (Direction)(direction_index + 1); }
+
 void StoreStraightNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
 void StoreDiagonalNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
 void StoreAllNeighborTiles(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT]);
 void StoreSlopes(TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT]);
 void InvalidateTiles(TileIndex neighbor_tiles[DIR_COUNT], bool invalidate_mask[DIR_COUNT]);
 
+Direction GetDirection(TileIndex source_tile, TileIndex dest_tile);
+
+int GetAngleFromDirection(Direction direction);
+Direction GetDirectionFromAngle(int angle);
+void SortTilesByAngle(TileIndex tiles[DIR_COUNT], int angle, TileIndex sorted_tiles[DIR_COUNT]);
+
 const char* SlopeToString(Slope slope);
+const char* DirectionToString(Direction direction);
 
 inline bool IsValidSlopeForRiver(Slope s) { return s == SLOPE_FLAT || IsInclinedSlope(s); }
 inline bool IsTileSuitableForRiver(TileIndex tile) { return IsValidSlopeForRiver(GetTileSlope(tile)); }

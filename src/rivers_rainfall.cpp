@@ -643,6 +643,342 @@ CalculateFlowIterator::~CalculateFlowIterator()
 }
 
 /* ================================================================================================================== */
+/* ================================== CurveFlowModificator ========================================================== */
+/* ================================================================================================================== */
+
+/** ToString function just meant for human readable log messages.
+ */
+const char* CurveFlowModificator::PhaseToString(Phase phase) {
+	switch(phase) {
+		case PHASE_STRAIGHT: return "PHASE_STRAIGHT";
+		case PHASE_LEFT: return "PHASE_LEFT";
+		case PHASE_RIGHT: return "PHASE_RIGHT";
+		default: return "UNKNOWN_PHASE";
+	}
+}
+
+/** Returns wether the given tile is suitable for (re-)directing flow to it, in the sense of flow modification.
+ */
+bool CurveFlowModificator::IsSuitableFlowTile(TileIndex tile)
+{
+	return tile != INVALID_TILE && (!IsTileType(tile, MP_WATER) || IsCoastTile(tile))
+				  && !IsLakeCenter(this->water_info, tile) && !IsOrdinaryLakeTile(this->water_info, tile) && !IsDisappearTile(this->water_info, tile);
+}
+
+/** Find a start tile for the flow modifications.  As there is no guarantee of finding one,
+ *  we try a lot of times before finally giving up.  Try to find an appropriate tile by
+ *  starting at a random tile, and stepping downwards until either the end of flow is reached,
+ *  or a suitable tile is found.
+ *  Basically, we want a non-lake tile with at least somewhat flow on it.  Choose
+ *  FLOW_FOR_RIVER / 2 for "somewhat" to bring some randomness into the question, where a
+ *  river in a huge valley / plain starts (i.e. start with flow modifications some time
+ *  before the river visually starts).
+ *  @return start tile as described
+ */
+TileIndex CurveFlowModificator::FindStartTile(int min_equal_directions)
+{
+	for (int n = 0; n < 100; n++) {
+		TileIndex tile = RandomTile();
+		Direction last_flow_direction;
+		int number_of_equal_directions = 0;
+		while (this->IsSuitableFlowTile(tile)) {
+			if (this->water_flow[tile] >= _settings_newgame.game_creation.rainfall.flow_for_river / 2 && number_of_equal_directions >= min_equal_directions) {
+				/* Now we have found the first tile, where flow increases above the minimal amount we want to consider.  Choose
+				 * a random tile between this one, and the end of flow.
+				 */
+				std::vector<TileIndex> candidate_tiles = std::vector<TileIndex>();
+				while (this->IsSuitableFlowTile(tile)) {
+					candidate_tiles.push_back(tile);
+					tile = AddFlowDirectionToTile(tile, this->water_info[tile]);
+				}
+				TileIndex ret_tile = candidate_tiles[RandomRange(candidate_tiles.size())];
+				DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, "Choosing start tile (%i,%i) for curve flow modification.", TileX(ret_tile), TileY(ret_tile));
+				return ret_tile;
+			} else {
+				tile = AddFlowDirectionToTile(tile, this->water_info[tile]);
+				if (tile != INVALID_TILE) {
+					if (number_of_equal_directions > 0 && GetFlowDirection(water_info, tile) == last_flow_direction) {
+						number_of_equal_directions++;
+					} else {
+						number_of_equal_directions = 1;
+						last_flow_direction = GetFlowDirection(water_info, tile);
+					}
+				}
+			}
+		}
+	}
+	return INVALID_TILE;
+}
+
+bool CurveFlowModificator::FinishFlowModification(TileIndex tile)
+{
+	return !this->IsSuitableFlowTile(tile);
+}
+
+/** Chooses the next tile while setting up an alternative flow path.
+ *  The next tile is based on the given angle and may not be higher (one corner up of the same height is allowed).
+ *  @param tile base tile
+ *  @param angle the angle, on a scale 0..360 degrees, north is 0 degrees, east 90 degrees.
+ *  @return the next tile, or INVALID_TILE if no tile could be chosen
+ */
+TileIndex CurveFlowModificator::GetNextTile(TileIndex tile, int angle)
+{
+	int ref_height = GetTileZ(tile);
+
+	TileIndex neighbor_tiles[DIR_COUNT];
+	StoreAllNeighborTiles(tile, neighbor_tiles);
+	TileIndex sorted_tiles[DIR_COUNT];
+	SortTilesByAngle(neighbor_tiles, angle, sorted_tiles);
+
+	for (int n = 0; n < DIR_COUNT; n++) {
+		if (sorted_tiles[n] != INVALID_TILE) {
+			int candidate_height;
+			Slope candidate_slope = GetTileSlope(sorted_tiles[n], &candidate_height);
+			if (candidate_height < ref_height || (candidate_height == ref_height && (candidate_slope == SLOPE_FLAT || IsSlopeWithOneCornerRaised(candidate_slope)))) {
+				return sorted_tiles[n];
+			}
+		}
+	}
+	return INVALID_TILE;
+}
+
+CurveFlowModificator::CurveFlowModificator(int *water_flow, byte *water_info) : FlowModificator(water_flow, water_info) {}
+
+bool CurveFlowModificator::ModifyFlow(int min_equal_directions)
+{
+	/* The flow modification consists of a sequence of tiles, if successful finally ending up in some end
+	 * tile where flow proceeds along a possibly different path.
+	 * Example: Starting at tile (57,32), flow originally proceeded via (58,32), (59,33) to (59,34).  Flow
+     * modification might exchange that path by the path (57,32), (56,32), (56,33), (56,34), (57,35),
+	 * (58,35) to (59,34).  Alternatively, flow might end up in an end-tile not present on the original
+	 * path of flow.
+	 *
+	 * In the end, we remove the flow leaving the start tile from the original path, and add it to the
+     * new, alternative one.
+	 *
+	 * Note that we do take care about creating no flow cycles, about removing the flow we redirect
+	 * from the old path, andd adding it to the new path, but we do NOT care about the flow on
+	 * other tiles near the path.  I.e. it keeps its original direction.  This should in general be
+     * no harm, since our curves are too small for the tiles in between reaching the minimum river
+	 * amount anyway.
+	 */
+
+	/* The current tile at the new, alternative, path. */
+	TileIndex start_tile = this->FindStartTile(min_equal_directions);
+	if (start_tile == INVALID_TILE) {
+		/* FindStartTile did its very best, but couldn´t find a suitable start tile. */
+		return true;
+	}
+
+	TileIndex curr_tile = start_tile;
+
+	/* The current angle when creating the new path.  We do our very best to choose a tile near that
+     * angle for proceeding, but if course, obstacles like mountains in the way may make choosing
+     * tiles not near that angle necessary.
+	 */
+	int curr_angle = GetAngleFromDirection((Direction)GB(water_info[curr_tile], 0, 3));
+
+	/* We change direction in phases, to get something looking like a rather round curve.
+	 * Each phase has a number of steps, and in each step, direction is changed by a random
+	 * amount of degrees in the range 0..direction_change_amount.  In case PHASE_STRAIGHT,
+	 * that delta angle is added or subtracted by random, in case PHASE_LEFT, it is subtracted,
+     * in case PHASE_RIGHT, it is added.
+	 */
+	int remaining_steps_this_phase = 0;
+	int direction_change_amount = 0;
+	Phase curr_phase = PHASE_STRAIGHT;
+
+	/* An upper bound on the total number of steps.  Once we generated a path of at most that length,
+	 * starting from its beginning we check each tile for non-cyclic flow, and if a tile fails that
+	 * check, we throw away the tail path.
+	 */
+	int step_index = 0;
+	int max_steps = RandomRange(30);
+
+	std::vector<TileIndex> new_path = std::vector<TileIndex>();
+	std::set<TileIndex> tiles_in_path = std::set<TileIndex>();
+	new_path.push_back(curr_tile);
+	tiles_in_path.insert(curr_tile);
+	do {
+		if (remaining_steps_this_phase == 0) {
+			/* Choose a new phase.  If the old phase was left or right, make the opposite direction more
+			 * probable, to have a chance of eventually coming back to a location near the original flow path,
+		     * otherwise make straight paths more probable, in order to avoid changing direction all the time.
+			 */
+			Phase old_phase = curr_phase;
+			int r = RandomRange(4);
+			switch(curr_phase) {
+				case PHASE_STRAIGHT: curr_phase = (r <= 1 ? PHASE_STRAIGHT : (r <= 2 ? PHASE_LEFT : PHASE_RIGHT));
+									 break;
+				case PHASE_LEFT:     curr_phase = (r <= 1 ? PHASE_RIGHT : (r <= 2 ? PHASE_STRAIGHT : PHASE_LEFT));
+									 break;
+				case PHASE_RIGHT:    curr_phase = (r <= 1 ? PHASE_LEFT : (r <= 2 ? PHASE_STRAIGHT : PHASE_RIGHT));
+									 break;
+				default: assert(false); // Impossible case, we take care about all legal values above
+			}
+
+			/* Big rivers in generally don´t have that narrow curves, thus use more steps of smaller angle each for their curves.
+			 * Using just one bound is a rough heuristic, which might get refined further.
+			 * Regarding direction_change_amount, the idea is: A curve should in average have 90 degrees.  Split up into three
+			 * steps, each step has 30 degrees.  The mean of the equally distributed random variable is 30 degrees, if the maximum
+			 * bound is set to 60 degrees.  In the second case: Total angle 60 degrees, one step 12 degrees, max. bound 24 degrees.
+		     */
+			remaining_steps_this_phase = (water_flow[curr_tile] < 5 * _settings_newgame.game_creation.rainfall.flow_for_river ? 3 : 5);
+			direction_change_amount = (water_flow[curr_tile] < 5 * _settings_newgame.game_creation.rainfall.flow_for_river ? 60 : 24);
+
+			DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, ".... Switching from phase %s to phase %s", this->PhaseToString(old_phase), this->PhaseToString(curr_phase));
+		}
+
+		/* Adjust angle */
+		int delta_angle = RandomRange(direction_change_amount);
+		switch(curr_phase) {
+			case PHASE_STRAIGHT:
+				curr_angle = curr_angle + (RandomRange(2) == 0 ? delta_angle : -delta_angle);
+				break;
+			case PHASE_LEFT:
+				curr_angle -= delta_angle;
+				break;
+			case PHASE_RIGHT:
+				curr_angle += delta_angle;
+				break;
+			default: assert(false);  // Impossible case, we process all possible values above
+		}
+
+		/* And switch to the next tile.  It is chosen by angle, including a bit of randomness and the condition that it must
+		 * not be higher (just tiles of the same height with one corner up are allowed).
+		 */
+		curr_tile = this->GetNextTile(curr_tile, curr_angle);
+
+		/* If we were not able to find a next tile, or built a cycle, abort.  Note that the cycle detection here is just
+		 * for our new path, it does not yet search for potential cycles in the changed flow.
+		 */
+		if (curr_tile == INVALID_TILE || tiles_in_path.find(curr_tile) != tiles_in_path.end()) {
+			break;
+		}
+
+		DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, ".... Added tile (%i,%i) to path, curr_angle is %i, flow = %i", TileX(curr_tile), TileY(curr_tile), curr_angle, this->water_flow[curr_tile]);
+
+		/* Bookkeeping: Record new tile, adjust step indices */
+		new_path.push_back(curr_tile);
+		tiles_in_path.insert(curr_tile);
+		remaining_steps_this_phase--;
+		step_index++;
+	} while (!this->FinishFlowModification(curr_tile) && step_index < max_steps);
+
+	DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, "Finished path, finish %i, step %i, max_steps %i", !this->FinishFlowModification(curr_tile), step_index, max_steps);
+
+	/* Now we have calculated a candidate alternative path, which works in terms of landscape, and has no cycle in itself.
+	 * It may however easily introduce a cyclic flow, and cylic flow is absolutely forbidden as it breaks various parts of
+	 * the algorithm.  Thus, what remains to be done is redirecting the flow for each tile on the candidate path (whose flow
+	 * direction actually changed).  This unfortunately involves following the flow until it ends in a lake or the sea or
+	 * the map edge.  If the new flow path introduces a cycle, we must discard this step of the redirection, and finish
+	 * with the last non-cyclic step.
+	 */
+	bool cycle = false;
+	int prev_delta_flow = -1;
+	for (int n = 0; n < (int)new_path.size() - 1 && !cycle; n++) {
+		curr_tile = new_path[n];
+		TileIndex first_old_tile = AddFlowDirectionToTile(curr_tile, this->water_info[curr_tile]);
+		TileIndex first_new_tile = new_path[n + 1];
+		if (first_old_tile == first_new_tile) {
+			/* Direction doesn´t change, thus there is no flow to redirect, and no danger to introduce a flow cycle either. */
+			DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, ".... Nothing to be done for tile (%i,%i), since flow does not change in this step.", TileX(curr_tile), TileY(curr_tile));
+		} else {
+			/* First find all tiles on the alternative path.  Also detect a introduced cycle, if there is one. */
+			std::set<TileIndex> seen_alternative_tiles = std::set<TileIndex>();
+			seen_alternative_tiles.insert(curr_tile);
+			TileIndex curr_alternative_tile = first_new_tile;
+			while (this->IsSuitableFlowTile(curr_alternative_tile)) {
+				if (seen_alternative_tiles.find(curr_alternative_tile) != seen_alternative_tiles.end()) {
+					DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, ".... Detected cycle at (%i,%i), aborting.  Cycle tiles are:", TileX(curr_alternative_tile), TileY(curr_alternative_tile));
+					for (std::set<TileIndex>::const_iterator it = seen_alternative_tiles.begin(); it != seen_alternative_tiles.end(); it++) {
+						DEBUG(map, 9, "........ Tile (%i,%i)", TileX(*it), TileY(*it));
+					}
+					cycle = true;
+					break;
+				} else {
+					DEBUG(map, 9, ".... Registering tile (%i,%i) as seen during cycle check", TileX(curr_alternative_tile), TileY(curr_alternative_tile));
+					seen_alternative_tiles.insert(curr_alternative_tile);
+					curr_alternative_tile = AddFlowDirectionToTile(curr_alternative_tile, this->water_info[curr_alternative_tile]);
+				}
+			}
+
+			if (!cycle) {
+				/* Subtract flow of curr_tile on old path, and add it on new path.  This might touch some tiles twice,
+				 * but it is no harm, and we can´t avoid that either.
+				 */
+				int delta_flow = this->water_flow[curr_tile];
+
+				/* Look wether our invariants hold */
+				if (prev_delta_flow == -1 || prev_delta_flow <= delta_flow) {
+					prev_delta_flow = delta_flow;
+				} else {
+					/* Don´t exactly throw an assertion, as inspecting problems is easier if you can have a look at the generated
+					 * landscape.  But abort flow modification right now.
+					 */
+					DEBUG(map, 0, "WARNING: prev_delta_flow = %i is greater than delta_flow = %i; will ABORT flow modification!", prev_delta_flow, delta_flow);
+					return false;
+				}
+
+				if (delta_flow < 0) {
+					DEBUG(map, 0, "WARNING: delta_flow = %i < 0; will ABORT flow modification!", delta_flow);
+					return false;
+				}
+
+				TileIndex curr_old_tile = first_old_tile;
+				while (this->IsSuitableFlowTile(curr_old_tile)) {
+					this->water_flow[curr_old_tile] -= delta_flow;
+					if (this->water_flow[curr_old_tile] < 0) {
+						DEBUG(map, 0, "WARNING: Trying to produce negative flow %i at (%i,%i)", this->water_flow[curr_old_tile], TileX(curr_old_tile), TileY(curr_old_tile));
+						return false;
+					}
+
+					DEBUG(map, 9, "Decrementing water_flow at (%i,%i) by %i to %i", TileX(curr_old_tile), TileY(curr_old_tile), delta_flow, this->water_flow[curr_old_tile]);
+					curr_old_tile = AddFlowDirectionToTile(curr_old_tile, this->water_info[curr_old_tile]);
+				}
+				/* Those two kinds of tiles are not suitable for continuing flow, but we have to decrement their flow at least... */
+				if (curr_old_tile != INVALID_TILE && (IsLakeCenter(this->water_info, curr_old_tile) || IsDisappearTile(this->water_info, curr_old_tile))) {
+					this->water_flow[curr_old_tile] -= delta_flow;
+					if (this->water_flow[curr_old_tile] < 0) {
+						DEBUG(map, 0, "WARNING: Trying to produce negative flow %i at (%i,%i)", this->water_flow[curr_old_tile], TileX(curr_old_tile), TileY(curr_old_tile));
+						return false;
+					}
+
+					DEBUG(map, 9, "Decrementing water_flow at (%i,%i) by %i to %i", TileX(curr_old_tile), TileY(curr_old_tile), delta_flow, this->water_flow[curr_old_tile]);
+				}
+
+				int prev_flow = -1;
+				TileIndex curr_alternative_tile = first_new_tile;
+				while (this->IsSuitableFlowTile(curr_alternative_tile)) {
+					this->water_flow[curr_alternative_tile] += delta_flow;
+					if (prev_flow == -1 || prev_flow < this->water_flow[curr_alternative_tile]) {
+						prev_flow = this->water_flow[curr_alternative_tile];
+					} else {
+						DEBUG(map, 0, "WARNING: Flow is not increasing along path, flow (%i,%i) = %i, prev_flow was %i", TileX(curr_alternative_tile), TileY(curr_alternative_tile),
+							this->water_flow[curr_alternative_tile], prev_flow);
+						return false;
+					}
+
+					DEBUG(map, 9, "Incrementing water_flow at (%i,%i) by %i to %i", TileX(curr_alternative_tile), TileY(curr_alternative_tile), delta_flow, this->water_flow[curr_alternative_tile]);
+					curr_alternative_tile = AddFlowDirectionToTile(curr_alternative_tile, this->water_info[curr_alternative_tile]);
+				}
+				if (curr_alternative_tile != INVALID_TILE && (IsLakeCenter(this->water_info, curr_alternative_tile) || IsDisappearTile(this->water_info, curr_alternative_tile))) {
+					this->water_flow[curr_alternative_tile] += delta_flow;
+					DEBUG(map, 9, "Incrementing water_flow at (%i,%i) by %i to %i", TileX(curr_alternative_tile), TileY(curr_alternative_tile), delta_flow, this->water_flow[curr_alternative_tile]);
+				}
+
+				Direction new_direction = GetDirection(curr_tile, first_new_tile);
+				DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, "Redirected flow %i to new direction %s starting with tile (%i,%i)",
+																  delta_flow, DirectionToString(new_direction), TileX(curr_tile), TileY(curr_tile));
+				this->water_info[curr_tile] = SB(this->water_info[curr_tile], 0, 3, new_direction);
+			}
+		}
+	}
+
+	return true;
+}
+
+/* ================================================================================================================== */
 /* ======================================== Lake ==================================================================== */
 /* ================================================================================================================== */
 
@@ -1077,6 +1413,7 @@ void DefineLakesIterator::RegisterAppropriateNeighborTilesAsUnprocessed(Lake *la
 			lake->RegisterUnprocessedEdgeTile(neighbor_tiles[n]);
 		}
 	}
+
 }
 
 /** Creates a lake at the given tile, which is supposed to be a lake center.  Optionally adds extra flow
@@ -1851,6 +2188,20 @@ void RainfallRiverGenerator::SetExtraNeighborTilesProcessed(TileIndex water_neig
 }
 
 /* ========================================================= */
+/* ================ Flow modification ====================== */
+/* ========================================================= */
+
+void RainfallRiverGenerator::ModifyFlow(int *water_flow, byte *water_info) {
+	CurveFlowModificator *curve_flow_modificator = new CurveFlowModificator(water_flow, water_info);
+	int number_of_flow_modifications = _settings_newgame.game_creation.rainfall.number_of_flow_modifications * (MapSize() / 1000);
+	for (int n = 0; n < number_of_flow_modifications; n++) {
+		int min_equal_directions = n < number_of_flow_modifications / 2 ? 0 : 3;
+		curve_flow_modificator->ModifyFlow(min_equal_directions);
+	}
+	delete curve_flow_modificator;
+}
+
+/* ========================================================= */
 /* ======= Prepare Lakes, Terraform to surface height ====== */
 /* ========================================================= */
 
@@ -2492,6 +2843,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  *  (2) Remove tiny basins, to (a) avoid rivers ending in tiny oceans, and (b) avoid generating too many senseless lakes.
  *  (3) Recalculate HeightIndex and NumberOfLowerTiles, as step (2) performed terraforming, and thus invalidated them.
  *  (4) Calculate flow.  Each tiles gains one unit of flow, while flowing downwards, it sums up.
+ *  (5) Modify flow paths, to make the result look like rivers with curves and corners, and not like straight channels.
  *  (6) Define lakes, i.e. decide which lake covers which tiles, and decide about the lake surface height.
  *  (7) Prepare rivers and lakes.  Add additional corner tiles to rivers, if flow is diagonal.  Terraform to lake surface height.
  * (12) Lower tiles with not yet valid slope, until they are suitable for river.
@@ -2525,6 +2877,12 @@ void RainfallRiverGenerator::GenerateRivers()
 	}
 	int *water_flow = flow_iterator->GetWaterFlow();
 	byte *water_info = flow_iterator->GetWaterInfo();
+
+	/* (5) Make flow paths look more random, i.e. more realistic.  Necessary, since the number of lower paths (i.e.,
+     *     series of tiles with descending number-of-lower-tiles) are rather straight towards the ocean.  And we want
+     *     rivers, not just straight channels.
+     */
+	this->ModifyFlow(water_flow, water_info);
 
 	/* (6) Define lakes, i.e. decide which tile is assigned to which lake, and which surface height lakes gain.
      *     Lakes start growing at points, where the number-of-lower-tiles iterator reported zero lower tiles.
