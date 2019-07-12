@@ -1311,13 +1311,14 @@ static uint GetWindowZPriority(WindowClass wc)
 
 		case WC_QUERY_STRING:
 		case WC_SEND_NETWORK_MSG:
-		case WC_ERRMSG:
-		    ++z_priority;
+			++z_priority;
+			FALLTHROUGH;
 
 		case WC_TOWN_PLACER_EDIT:
 			++z_priority;
 			FALLTHROUGH;
 
+		case WC_ERRMSG:
 		case WC_CONFIRM_POPUP_QUERY:
 		case WC_MODAL_PROGRESS:
 		case WC_NETWORK_STATUS_WINDOW:
