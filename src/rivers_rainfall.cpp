@@ -1851,6 +1851,37 @@ void RainfallRiverGenerator::SetExtraNeighborTilesProcessed(TileIndex water_neig
 }
 
 /* ========================================================= */
+/* ======= Prepare Lakes, Terraform to surface height ====== */
+/* ========================================================= */
+
+/** This function prepares a lake for actually being filled with water tiles using MakeRiver.
+ *  @param tile an active lake center
+ *  @param water_flow the water flow calculated before
+ *  @param water_info the water information calculated before
+ *  @param lake_iterator the DefineLakesIterator that initially defined where lakes spread, what tiles they have,
+ *                       and where their outflow is
+ *  @param extra_water_tiles a set of tiles, where this function must insert any tile declared to be a lake tile
+ */
+void RainfallRiverGenerator::PrepareLake(TileIndex tile, int *water_flow, byte *water_info, DefineLakesIterator *lake_iterator, std::vector<TileWithValue> &extra_water_tiles)
+{
+	Lake *lake = lake_iterator->GetLake(tile);
+
+	std::set<TileIndex>* lake_tiles = lake->GetLakeTiles();
+
+	/* Terraform all lake tiles to the surface height of the lake and perform some final bookkeeping. */
+	int surface_height = lake->GetSurfaceHeight();
+	DEBUG(map, RAINFALL_TERRAFORM_FOR_LAKES_LOG_LEVEL, "Will terraform lake (%i,%i) with " PRINTF_SIZE " lake tiles to height %i",
+			  TileX(lake->GetCenterTile()), TileY(lake->GetCenterTile()), lake_tiles->size(), surface_height);
+	for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
+		TileIndex lake_tile = *it;
+		TerraformTileToSlope(lake_tile, surface_height, SLOPE_FLAT);
+		extra_water_tiles.push_back(TileWithValue(lake_tile, water_flow[tile]));
+
+		MarkProcessed(water_info, lake_tile);
+	}
+}
+
+/* ========================================================= */
 /* ======= Prepare River, Choose Diagonal Extra Tiles ====== */
 /* ========================================================= */
 
@@ -2012,6 +2043,7 @@ void RainfallRiverGenerator::PrepareRiversAndLakes(std::vector<TileWithHeightAnd
 		int flow = tile_info.flow;
 
 		if (IsActiveLakeCenter(water_info, tile)) {
+			this->PrepareLake(tile, water_flow, water_info, define_lakes_iterator, extra_river_tiles);
 		} else {
 			this->PrepareRiverTile(tile, flow, water_flow, water_info, extra_river_tiles);
 		}
@@ -2062,7 +2094,7 @@ void RainfallRiverGenerator::GenerateRiverTiles(std::vector<TileWithHeightAndFlo
  *  (3) Recalculate HeightIndex and NumberOfLowerTiles, as step (2) performed terraforming, and thus invalidated them.
  *  (4) Calculate flow.  Each tiles gains one unit of flow, while flowing downwards, it sums up.
  *  (6) Define lakes, i.e. decide which lake covers which tiles, and decide about the lake surface height.
- *  (7) Prepare rivers and lakes.  Add additional corner tiles to rivers, if flow is diagonal.
+ *  (7) Prepare rivers and lakes.  Add additional corner tiles to rivers, if flow is diagonal.  Terraform to lake surface height.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
@@ -2104,9 +2136,12 @@ void RainfallRiverGenerator::GenerateRivers()
 		define_lakes_iterator->Calculate(h);
 	}
 
-	/* (7) Prepare rivers and lakes, e.g. add additional corner tiles if flow direction is diagonal. */
+	/* (7) Prepare rivers and lakes, e.g. add additional corner tiles if flow direction is diagonal,
+	 *     and terraform lakes to their surface height.
+     */
 	std::vector<TileWithHeightAndFlow> water_tiles = std::vector<TileWithHeightAndFlow>();
 	std::vector<TileWithValue> extra_river_tiles = std::vector<TileWithValue>();
+	this->lake_connected_component_calculator = new LakeConnectedComponentCalculator(water_info);
 	this->DeterminePlannedWaterTiles(water_tiles, water_flow, water_info, define_lakes_iterator);
 	this->PrepareRiversAndLakes(water_tiles, water_flow, water_info, define_lakes_iterator, extra_river_tiles);
 	this->AddExtraRiverTilesToWaterTiles(water_tiles, extra_river_tiles);
@@ -2114,6 +2149,8 @@ void RainfallRiverGenerator::GenerateRivers()
 
 	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);
+
+	delete this->lake_connected_component_calculator;
 
 	/* Debug code: Store the results of the iterators in a public array, to be able to query them in the LandInfoWindow.
 	 *             Without that possibility, debugging those values would be really hard. */

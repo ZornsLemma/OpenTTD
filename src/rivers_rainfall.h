@@ -833,12 +833,16 @@ private:
 	static const uint LAKE_HASH_SIZE = 8; ///< The number of bits the hash for lake path finding should have.
 	static uint LakePathSearch_Hash(uint tile, uint dir);
 
+	LakeConnectedComponentCalculator *lake_connected_component_calculator;
+
 	bool IsPlannedAsWater(TileIndex tile, int *water_flow, byte *water_info);
 	bool IsPureDiagonalFlow(TileIndex tile, TileIndex neighbor_tiles[DIR_COUNT], int *water_flow, byte *water_info,
 						   Direction diagonal_direction, Direction straight_direction_one, Direction straight_direction_two);
 	int GetNumberOfAscendedSlopes(Slope slope);
 	void DeclareNeighborTileWater(TileIndex water_neighbor_tiles[DIR_COUNT], TileIndex neighbor_tiles[DIR_COUNT], bool add_tile, Direction direction);
 	void SetExtraNeighborTilesProcessed(TileIndex water_neighbor_tiles[DIR_COUNT], byte *water_info, std::vector<TileWithValue> &extra_river_tiles, bool add_tile, Direction direction, int flow);
+
+	void PrepareLake(TileIndex tile, int *water_flow, byte *water_info, DefineLakesIterator *lake_iterator, std::vector<TileWithValue> &extra_water_tiles);
 	void ChooseTileForExtraRiver(TileIndex tile,
 								TileIndex neighbor_tiles[DIR_COUNT], Slope neighbor_slopes[DIR_COUNT], int neighbor_heights[DIR_COUNT],
 								Direction diagonal_direction, Direction straight_direction_one, Direction straight_direction_two,
