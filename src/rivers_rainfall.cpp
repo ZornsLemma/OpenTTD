@@ -5148,6 +5148,245 @@ void RainfallRiverGenerator::FixUpwardsRivers(int *river_map, int *river_iterati
 }
 
 /* ========================================================= */
+/* =========== Link rivers with the ocean. ================= */
+/* ========================================================= */
+
+/** This function tries to link rivers that end up near the ocean with the ocean.
+ *  The background is, that earlier algorithms cannot fully assure that rivers stay linked
+ *  with the ocean.
+ */
+void RainfallRiverGenerator::TryLinkRiversWithOcean(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info)
+{
+	/* Maximum steps to look or step towards ocean. */
+	const int MAX_STEPS = 3;
+
+	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
+
+
+	for (std::map<int, River*>::const_iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
+		River *river = it->second;
+		DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "Inspecting river %i", river->id);
+
+		int curr_iteration = INT32_MAX;         // Current iteration in river sense
+		int last_iteration = INT32_MAX;         // The last iteration of the river
+		int start_index = INT32_MAX;            // The start index in the river.tiles vector.  We first step backwards in that vector, mark the reached position in this variable.
+		bool near_ocean = false;                // true if and only if the river is considered to be near the ocean
+		int number_of_ocean_neighbor_tiles = 0; // How many tiles are already neighbors of the ocean?
+		int max_flow = 0;                       // Maximum flow seen
+		for (start_index = river->tiles.size() - 1; start_index >= 0; start_index--) {
+			TileIndex tile = river->tiles[start_index];
+			max_flow = max(max_flow, water_flow[tile]);
+
+			/* Find out two things: (1) Is there an ocean tile somewhere around in the near neighborhood?  I.e. is this a river we want to link with the ocean?
+			 * (2) Does this particular tile have an straight neighbor ocean tile?  If yes, increment the corresponding counter.
+			 */
+			bool this_ocean_neighbor = false;
+			for (int direction = DIR_N; direction < DIR_COUNT; direction++) {
+				TileIndex candidate_tile = tile;
+				for (int n = 0; n < MAX_STEPS; n++) {
+					candidate_tile = AddDirectionToTile(candidate_tile, (Direction)direction);
+					if (candidate_tile == INVALID_TILE) {
+						break;
+					}
+
+					/* Conceptionally, we want to do this here: IsTileType(neighbor_tiles[n], MP_WATER) && !IsCoastTile(neighbor_tiles[n])
+					 * Unfortunately, if terrain was lowered before by our terraforming algorithms, it not necessarily has become ocean already,
+					 * even if it is adjacent to the ocean (probably because the tile loop didn´t yet run).
+					 * Thus: For the sake of this algorithm, we assume that flat tiles at height zero will become ocean.
+					 */
+					if (TileHeight(candidate_tile) == 0 && GetTileSlope(candidate_tile) == SLOPE_FLAT) {
+						near_ocean = true;
+						this_ocean_neighbor |= (n == 0 && (direction % 2) == 1); // n == 0 means direct neighbor, (direction % 2) == 1 matches exactly for the straight directions NW, NE, SW, SE
+						break;
+					}
+				}
+			}
+
+			if (this_ocean_neighbor) {
+				number_of_ocean_neighbor_tiles++;
+			}
+
+			curr_iteration = river_iteration[tile];
+
+			/* Try to link tiles in the last few iterations with the ocean. */
+			if (last_iteration == INT32_MAX) {
+				last_iteration = curr_iteration;
+			} else if (curr_iteration < last_iteration - 2) {
+				break;
+			}
+		}
+
+		if (!near_ocean) {
+			/* We did not find ocean, thus there is nothing to be done left for this river */
+			continue;
+		}
+
+		/* If more river tiles than the wide river bound have an ocean neighbor, we don´t have to worry either */
+		int desired_width = this->GetWideRiverBoundForFlow(max_flow);
+		if (number_of_ocean_neighbor_tiles >= desired_width) {
+			continue;
+		}
+
+		DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "River %i is near the ocean, and has %i connections to it.  For flow %i, %i would be desired."
+														 "Will try to link the tiles after iteration %i, start_index %i",
+					  river->id, number_of_ocean_neighbor_tiles, max_flow, desired_width, curr_iteration, start_index);
+
+		/* The number of tiles where we succeeded in linking with the ocean */
+		int number_of_success_tiles = 0;
+
+		for (int z = river->tiles.size() - 1; z >= max(0, start_index); z--) {
+			TileIndex tile = river->tiles[z];
+
+			int x = TileX(tile);
+			int y = TileY(tile);
+
+			DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, ".... Inspecting river tile (%i,%i)", x, y);
+
+			/* Get a rough picture where ocean is located, relative to the tile.  Go some steps into each direction,
+			 * and if on that path an ocean tile is located, keep the direction for later processing.
+			 */
+			std::set<Direction> ocean_directions = std::set<Direction>();
+			for (int direction = DIR_N; direction < DIR_COUNT; direction++) {
+				TileIndex candidate_tile = tile;
+				for (int n = 0; n < MAX_STEPS; n++) {
+					candidate_tile = AddDirectionToTile(candidate_tile, (Direction)direction);
+					//DEBUG(map, 9, "........ Evaluating candidate tile (%i,%i), direction %s", TileX(candidate_tile), TileY(candidate_tile), DirectionToString((Direction)direction));
+					if (candidate_tile == INVALID_TILE) {
+						break;
+					} else if (IsTileType(candidate_tile, MP_WATER) || (TileHeight(candidate_tile) == 0 && GetTileSlope(candidate_tile) == SLOPE_FLAT)) {  // See above what motivates the second clause
+						DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "............ Found water, adding directions");
+						if (direction == DIR_NW || direction == DIR_NE || direction == DIR_SW || direction == DIR_SE) {
+							ocean_directions.insert((Direction)direction);
+						} else {
+							ocean_directions.insert(GetNextDirection((Direction)direction));
+							ocean_directions.insert(GetPrevDirection((Direction)direction));
+						}
+						break;
+					}
+				}
+			}
+
+			/* Now, for each of these directions, try to link the tile with the ocean using a straight line of river tiles. */
+			bool reached_ocean = false;
+			for (std::set<Direction>::const_iterator direction_it = ocean_directions.begin(); direction_it != ocean_directions.end() && !reached_ocean; direction_it++) {
+				Direction direction = *direction_it;
+				int dx;
+				int dy;
+
+				/* Based on the direction, decide which slope we want when desecnding downwards. */
+				Slope desired_slope;
+				switch (direction) {
+					case DIR_NW: dx = 0; dy = -1; desired_slope = SLOPE_SE; break;
+					case DIR_NE: dx = -1; dy = 0; desired_slope = SLOPE_SW; break;
+					case DIR_SW: dx = 1; dy = 0; desired_slope = SLOPE_NE; break;
+					case DIR_SE: dx = 0; dy = 1; desired_slope = SLOPE_NW; break;
+					default: assert(false);
+							 /* Should never be reached.  But avoid the unitialized variable warnings from the compiler. */
+							 return;
+				}
+
+				DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, ".... Inspecting start tile (%i,%i), trying direction %s, desired_slope %s",
+								x, y, DirectionToString(direction), SlopeToString(desired_slope));
+
+				TileIndex prev_tile = tile;
+				TerraformerState terraformer_state;
+				bool success = true;
+
+				/* Now actually step towards the ocean. */
+				std::vector<TileIndex> new_river_tiles = std::vector<TileIndex>();
+				for (int n = 0; n < MAX_STEPS && !reached_ocean; n++) {
+
+					/* Assure that we stay in map */
+					int curr_x = x + (n + 1) * dx;
+					int curr_y = y + (n + 1) * dy;
+					if (curr_x > 0 && curr_y > 0 && curr_x < (int)MapMaxX() - 1 && curr_y < (int)MapMaxY() - 1) {
+						TileIndex curr_tile = TileXY(curr_x, curr_y);
+
+						/* When we reach a river tile, then we cannot add a new tile, thus stop here for this direction.  Maybe, later/earlier, this code will run with that tile as start tile. */
+						if (WasProcessed(water_info, curr_tile)) {
+							DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "........ (%i,%i) is already a river tile, will stop searching this direction here.", TileX(curr_tile), TileY(curr_tile));
+							break;
+						}
+
+						int height = GetTileZ(prev_tile);
+
+						/* Try to descend, if we are at GetTileZ > 0. */
+						if (height > 0) {
+							int desired_height;
+
+							/* Given the slope, which TileHeight do we want to use for terraforming? */
+							switch(desired_slope) {
+								case SLOPE_NW:
+								case SLOPE_NE: desired_height = height; break;
+								default: desired_height = height - 1;          // Cases SLOPE_FLAT, SLOPE_SW, SLOPE_SE
+							}
+
+							DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "........ Trying to terraform (%i,%i) to (%s,%i)",
+											TileX(curr_tile), TileY(curr_tile), SlopeToString(desired_slope), desired_height);
+
+							/* Simulate terraforming and check wether it does what we want */
+							success = SimulateTerraformTileToSlope(curr_tile, desired_height, desired_slope, terraformer_state);
+							success &= this->AreAffectedTilesSuitableForWater(terraformer_state, water_info);
+							if (success) {
+								DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "............ Success with %s", SlopeToString(desired_slope));
+								new_river_tiles.push_back(curr_tile);
+							}
+						} else {
+							success = false;
+						}
+						/* If we were at height zero above, or did not have success with terraforming, try again with a flat slope */
+						if (!success) {
+							DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "........ Trying to terraform (%i,%i) to (SLOPE_FLAT,%i)",
+											TileX(curr_tile), TileY(curr_tile), height);
+
+							success = SimulateTerraformTileToSlope(curr_tile, height, SLOPE_FLAT, terraformer_state);
+							success &= this->AreAffectedTilesSuitableForWater(terraformer_state, water_info);
+							if (success) {
+								DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "............ Success with SLOPE_FLAT");
+								new_river_tiles.push_back(curr_tile);
+							}
+						}
+
+						/* If terraforming was successful, check wether we now reached ocean.  If yes, record that.
+						 * Note: If terrain was suitable for a river anyway, the SimulateTerraformTileToSlope calls simply reported
+						 * success while doing nothing, thus we don´t need to keep track of that case separately.
+						 */
+						if (success) {
+							StoreStraightNeighborTiles(curr_tile, neighbor_tiles);
+							for (int v = 0; v < DIR_COUNT; v++) {
+								if (neighbor_tiles[v] != INVALID_TILE && TileHeight(neighbor_tiles[v]) == 0 && GetTileSlope(neighbor_tiles[v]) == SLOPE_FLAT) {
+									reached_ocean = true;
+									break;
+								}
+							}
+						} else {
+							break;
+						}
+
+						prev_tile = curr_tile;
+					}
+				}
+
+				/* Actually declare the new tiles river only if the path actually reached ocean.  We don´t want to leave paths of river tiles leading nowhere. */
+				if (success) {
+					DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, ".... SUCCESS: Will execute that terraforming, will create " PRINTF_SIZE " new river tiles", new_river_tiles.size());
+					ExecuteTerraforming(terraformer_state);
+					for (uint w = 0; w < new_river_tiles.size(); w++) {
+						DeclareRiver(water_info, new_river_tiles[w]);
+						MarkProcessed(water_info, new_river_tiles[w]);
+					}
+				}
+			}
+			if (reached_ocean) {
+				number_of_success_tiles++;
+			}
+		}
+
+		DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, ".... Created %i new links with the ocean.", number_of_success_tiles);
+	}
+}
+
+/* ========================================================= */
 /* ======= Fine tuning tiles - Lower until valid =========== */
 /* ========================================================= */
 
@@ -5574,6 +5813,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
  * (14) Derive logical rivers.  Used for fine tuning like preventing upwards flow.  Might be useful for generating river names.
  * (15) Set up connections between the logical rivers.
  * (16) Get rid of rivers flowing upwards.
+ * (17) Link rivers with the ocean.
  * (19) Finally make all tiles planned to become river/lakes river tiles in OpenTTD sense.
  */
 void RainfallRiverGenerator::GenerateRivers()
@@ -5680,6 +5920,12 @@ void RainfallRiverGenerator::GenerateRivers()
 
 	/* (16) Get rid of rivers flowing upwards. */
 	this->FixUpwardsRivers(river_map, river_iteration, id_to_river, water_flow, water_info);
+
+	/* (17) Link rivers with the ocean.  Necessary as separate step, since some of the previous algorithms
+	 *      cannot completely treat ocean tiles like river tiles.  This e.g. affects terraforming.
+     *      Thus, the connection between a river and the ocean it flows to is often rather weak at this point.
+	 */
+	this->TryLinkRiversWithOcean(river_map, river_iteration, id_to_river, water_flow, water_info);
 
 	/* (19) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);
