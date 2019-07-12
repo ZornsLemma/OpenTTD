@@ -81,6 +81,8 @@ namespace SQConvert {
 	template <> inline int Return<ScriptWindow::GenerateLandscapeWidgets>(HSQUIRRELVM vm, ScriptWindow::GenerateLandscapeWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
 	template <> inline ScriptWindow::CreateScenarioWidgets GetParam(ForceType<ScriptWindow::CreateScenarioWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::CreateScenarioWidgets)tmp; }
 	template <> inline int Return<ScriptWindow::CreateScenarioWidgets>(HSQUIRRELVM vm, ScriptWindow::CreateScenarioWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
+	template <> inline ScriptWindow::RainfallOptionWidgets GetParam(ForceType<ScriptWindow::RainfallOptionWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::RainfallOptionWidgets)tmp; }
+	template <> inline int Return<ScriptWindow::RainfallOptionWidgets>(HSQUIRRELVM vm, ScriptWindow::RainfallOptionWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
 	template <> inline ScriptWindow::GenerationProgressWidgets GetParam(ForceType<ScriptWindow::GenerationProgressWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::GenerationProgressWidgets)tmp; }
 	template <> inline int Return<ScriptWindow::GenerationProgressWidgets>(HSQUIRRELVM vm, ScriptWindow::GenerationProgressWidgets res) { sq_pushinteger(vm, (int32)res); return 1; }
 	template <> inline ScriptWindow::GoalListWidgets GetParam(ForceType<ScriptWindow::GoalListWidgets>, HSQUIRRELVM vm, int index, SQAutoFreePointers *ptr) { SQInteger tmp; sq_getinteger(vm, index, &tmp); return (ScriptWindow::GoalListWidgets)tmp; }

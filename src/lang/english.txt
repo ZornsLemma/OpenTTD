@@ -2781,6 +2781,46 @@ STR_SE_MAPGEN_FLAT_WORLD_HEIGHT_QUERY_CAPT                      :{WHITE}Change h
 
 # Rainfall River Generator Expert Options
 STR_RAINFALL_CAPTION                                            :{WHITE}Configuration of Rainfall River Generator
+STR_RAINFALL_BASIC_SETTINGS_CAPTION                             :{WHITE}Basic settings
+STR_RAINFALL_BASIC_SETTINGS_TOOLTIP                             :{BLACK}These settings define how many rivers and lakes of which size you get.
+STR_RAINFALL_FLOW_FOR_RIVER_LABEL                               :{BLACK}Create river if flow >=
+STR_RAINFALL_FLOW_FOR_RIVER_TOOLTIP                             :{BLACK}The generator assumes that each tile receives a rainfall of one.  Water flows downwards, thus that rainfall sums up at lower tiles, i.e. tiles receive some flow.  If that flow exceeds the value configured here, a river will be generated at the tile at hand.  Conclusion: The smaller this value is, the more rivers will be generated.
+STR_RAINFALL_FLOW_PER_LAKE_VOLUME_LABEL                         :{BLACK}Flow consumed per lake tile volume
+STR_RAINFALL_FLOW_PER_LAKE_VOLUME_TOOLTIP                       :{BLACK}The generator expands lakes and rises their surface height until it finds an outflow, or the number of lake tiles times the depth of the lake times this value exceeds the inflow of the lake (with some further details omitted here).  If an outflow is found, it nevertheless receives the whole inflow.  Conclusion: The smaller this value is, the bigger lakes propagating their water downwards you will get.
+
+STR_RAINFALL_RIVER_SETTINGS_CAPTION                             :{WHITE}River shape
+STR_RAINFALL_RIVER_SETTINGS_TOOLTIP                             :{BLACK}Raw river generation often generates straight rivers, one tile wide.  Add more curves, and make rivers with huge flow wider.
+STR_RAINFALL_FLOW_MODIFICATION_LABEL                            :{BLACK}Flow modifications per 1000 tiles
+STR_RAINFALL_FLOW_MODIFICATION_TOOLTIP                          :{BLACK}The initial flow calculated by the generator often leads downwards in a very straight manner.  Rivers calculated on top of it tend to look straight-ugly.  A flow modificator aims at adding curves to rivers.  Configure here, how many times per 1000 map tiles the flow modificator should do its very best to add a curve to a river somewhere.
+STR_RAINFALL_RIVER_EXPANSION_ENABLED_LABEL                      :{BLACK}Wider rivers
+STR_RAINFALL_RIVER_EXPANSION_MULTIPLIER_LABEL                   :{BLACK}Multiplier
+STR_RAINFALL_RIVER_EXPANSION_TOOLTIP                            :{BLACK}Optionally, rivers may made wider.  Multiply the flow needed for a river once by the multiplier to get the flow needed for a two tiles wide river, multiply twice to get the flow needed for a three tiles wide river, and so on.  E.g. if flow needed is 50, and multiplier is 10, flow 5000 is needed for three tiles wide river.
+
+STR_RAINFALL_RIVER_EXPANSION_ON                                 :On
+STR_RAINFALL_RIVER_EXPANSION_OFF                                :Off
+
+STR_RAINFALL_WIDER_VALLEYS_ENABLED_LABEL                        :{BLACK}Wider valleys
+STR_RAINFALL_WIDER_VALLEYS_MULTIPLIER_LABEL                     :{BLACK}Multiplier
+STR_RAINFALL_WIDER_VALLEYS_TOOLTIP                              :{BLACK}Optionally, the generator may widen valleys where rivers are located, to gain more usable space.  On each side of a river, up to this multiplier times the river width tiles will be lowered.  The mean value will be half that number.
+
+STR_RAINFALL_WIDER_VALLEYS_ON                                   :On
+STR_RAINFALL_WIDER_VALLEYS_OFF                                  :Off
+STR_RAINFALL_WIDER_VALLEYS_RANDOMNESS                           :{BLACK}Randomness
+STR_RAINFALL_WIDER_VALLEYS_RANDOMNESS_TOOLTIP                   :{BLACK}When generating wider valleys, for each 16x16 section of the map, a multiplier on the calculated width will be defined.  The higher this value is, the more randomness will be used to calculate these values.  0 means always use half the width value, 1000 means applying the predefined number of steps to modify that number. I.e. this value controls how diverse valleys look, wether some are small and some wide, or all unique.
+
+STR_RAINFALL_LAKE_SETTINGS_CAPTION                              :{WHITE}Fine-tuning lakes {GRAY}(steps performed in this order)
+STR_RAINFALL_LAKE_SETTINGS_TOOLTIP                              :{BLACK}Raw lake generation is somewhat greedy.  These fine-tuning steps create additional islands, expand the lake shore, or make a lake disappear at all.
+STR_RAINFALL_LAKE_OUTFLOW_CANYON_PROBABILITY_LABEL              :{BLACK}Probability for outflow canyon
+STR_RAINFALL_LAKE_OUTFLOW_CANYON_PROBABILITY_TOOLTIP            :{BLACK}With this probability, a lake is lowered by digging a canyon through its outflow.  Set a high value both here and for the minimize probability, and a low value for flow consumed per lake volume, in order to transform lake basins into ordinary rivers.
+STR_RAINFALL_LAKE_MINIMIZE_PROBABILITY_LABEL                    :{BLACK}Probability for minimizing a lake
+STR_RAINFALL_LAKE_MINIMIZE_PROBABILITY_TOOLTIP                  :{BLACK}With this probability, a lake is reduced to (more or less) the minimum set of tiles necessary to keep it connected.  Set a high value here if you favour rivers over lakes, but have many lake basins in your landscape.
+STR_RAINFALL_LAKE_ISLAND_PROBABILITY_LABEL                      :{BLACK}Probability for island starting at a lake tile
+STR_RAINFALL_LAKE_ISLAND_TOOLTIP                                :{BLACK}With this probability, the generator will start creating an island at some lake tile.  Its size is a random number in the range zero to the maximum number you specify here.  Caution with high values:  Specifying e.g. 500 here means that at every second lake tile an island is started.
+STR_RAINFALL_LAKE_MORE_LAND_AT_SHORE_PROBABILITY_LABEL          :{BLACK}Probability for more land near a shore tile
+STR_RAINFALL_LAKE_MORE_LAND_AT_SHORE_TOOLTIP                    :{BLACK}With this probability, the generator will start more land near a shore tile.  A random number in the range zero to the size value you specify will be transformed to land.  Specifying a relatively high probability and a low maximum size should work best for getting a constant riparian strip.
+
+STR_RAINFALL_LAKE_PROBABILITY_DIVISOR                           :{BLACK}/ 1000
+STR_RAINFALL_LAKE_MAXIMUM_SIZE_LABEL                            :{BLACK}Maximum size
 
 # Map generation progress
 STR_GENERATION_WORLD                                            :{WHITE}Generating World...

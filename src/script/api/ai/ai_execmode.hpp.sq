@@ -19,7 +19,6 @@ void SQAIExecMode_Register(Squirrel *engine)
 {
 	DefSQClass<ScriptExecMode, ST_AI> SQAIExecMode("AIExecMode");
 	SQAIExecMode.PreRegister(engine);
-	SQAIExecMode.AddConstructor<void (ScriptExecMode::*)(), 1>(engine, "x");
 
 	SQAIExecMode.PostRegister(engine);
 }

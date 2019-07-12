@@ -81,6 +81,47 @@ enum CreateScenarioWidgets {
 
 /** Widgets for the expert settings for the Rainfall River Generator */
 enum RainfallOptionWidgets {
+	WID_RFO_FLOW_FOR_RIVER_DOWN,               ///< Decrease flow needed for river
+	WID_RFO_FLOW_FOR_RIVER_TEXT,               ///< Flow needed for river
+	WID_RFO_FLOW_FOR_RIVER_UP,                 ///< Increase flow needed for river
+	WID_RFO_LAKE_VOLUME_DOWN,                  ///< Decrease flow consumed per lake volume
+	WID_RFO_LAKE_VOLUME_TEXT,                  ///< Flow consumed per lake volume
+	WID_RFO_LAKE_VOLUME_UP,                    ///< Increase flow consumed per lake volume
+
+	WID_RFO_FLOW_MODIFICATIONS_DOWN,           ///< Decrease flow modifications per 1000 tiles
+	WID_RFO_FLOW_MODIFICATIONS_TEXT,           ///< Flow modifications per 1000 tiles
+	WID_RFO_FLOW_MODIFICATIONS_UP,             ///< Increase flow modifications per 1000 tiles
+	WID_RFO_WIDER_RIVERS_DROPDOWN,             ///< Optionally enable wider rivers
+	WID_RFO_WIDER_RIVERS_MULT_DOWN,            ///< Decrease multiplier for wider rivers
+	WID_RFO_WIDER_RIVERS_MULT_TEXT,            ///< Multiplier for wider rivers
+	WID_RFO_WIDER_RIVERS_MULT_UP,              ///< Increase multiplier for wider rivers
+	WID_RFO_WIDER_VALLEYS_DROPDOWN,            ///< Optionally enable wider valleys
+	WID_RFO_WIDER_VALLEYS_MULT_DOWN,           ///< Decrease multiplier for wider valleys
+	WID_RFO_WIDER_VALLEYS_MULT_TEXT,           ///< Multiplier for wider valleys
+	WID_RFO_WIDER_VALLEYS_MULT_UP,             ///< Increase multiplier for wider valleys
+	WID_RFO_WIDER_VALLEYS_RANDOM_DOWN,         ///< Decrease randomness for wider valleys
+	WID_RFO_WIDER_VALLEYS_RANDOM_TEXT,         ///< Randomness for wider valleys
+	WID_RFO_WIDER_VALLEYS_RANDOM_UP,           ///< Increase randomness for wider valleys
+
+	WID_RFO_OUTFLOW_CANYON_PROBABILITY_DOWN,   ///< Decrease probability for an outflow canyon
+	WID_RFO_OUTFLOW_CANYON_PROBABILITY_TEXT,   ///< Probability for an outflow canyon
+	WID_RFO_OUTFLOW_CANYON_PROBABILITY_UP,     ///< Increase probability for an outflow canyon
+	WID_RFO_MINIMIZE_LAKE_PROBABILITY_DOWN,    ///< Decrease probability for minimizing a lake
+	WID_RFO_MINIMIZE_LAKE_PROBABILITY_TEXT,    ///< Probability for minimizing a lake
+	WID_RFO_MINIMIZE_LAKE_PROBABILITY_UP,      ///< Increase probability for minimizing a lake
+	WID_RFO_ISLAND_PROBABILITY_DOWN,           ///< Decrease probability for island
+	WID_RFO_ISLAND_PROBABILITY_TEXT,           ///< Probability for island
+	WID_RFO_ISLAND_PROBABILITY_UP,             ///< Increase probability for island
+	WID_RFO_SHORE_PROBABILITY_DOWN,            ///< Decrease probability for shore expansion
+	WID_RFO_SHORE_PROBABILITY_TEXT,            ///< Probability for shore expansion
+	WID_RFO_SHORE_PROBABILITY_UP,              ///< Increase probability for shore expansion
+
+	WID_RFO_ISLAND_MAX_SIZE_DOWN,              ///< Decrease max size of island
+	WID_RFO_ISLAND_MAX_SIZE_TEXT,              ///< Max size of island
+	WID_RFO_ISLAND_MAX_SIZE_UP,                ///< Increase max size of island
+	WID_RFO_SHORE_MAX_SIZE_DOWN,               ///< Decrease max size of shore expansion
+	WID_RFO_SHORE_MAX_SIZE_TEXT,               ///< Max size of shore expansion
+	WID_RFO_SHORE_MAX_SIZE_UP,                 ///< Increase max size of shore expansion
 };
 
 /** Widgets of the #GenerateProgressWindow class. */
