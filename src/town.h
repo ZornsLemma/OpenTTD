@@ -286,4 +286,9 @@ void MakeDefaultName(T *obj)
 
 extern uint32 _town_cargoes_accepted;
 
+TileIndex AlignTileToGrid(TileIndex tile, TownLayout layout);
+CommandCost TownCanBePlacedHere(TileIndex tile);
+void DoCreateTown(Town *t, TileIndex tile, uint32 townnameparts, TownSize size, bool city, TownLayout layout, bool manual);
+bool UndoTownCreationIfNecessary(Town *town);
+
 #endif /* TOWN_H */
