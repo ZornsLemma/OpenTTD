@@ -118,7 +118,7 @@ public:
 		this->InitNested();
 
 #if defined(_DEBUG)
-#	define LANDINFOD_LEVEL 0
+#	define LANDINFOD_LEVEL 1
 #else
 #	define LANDINFOD_LEVEL 1
 #endif
@@ -217,7 +217,7 @@ public:
 		seprintf(tmp, lastof(tmp), "0x%.4X", tile);
 		SetDParam(0, TileX(tile));
 		SetDParam(1, TileY(tile));
-		SetDParam(2, GetTileZ(tile));
+		SetDParam(2, TileHeight(tile));
 		SetDParamStr(3, tmp);
 		GetString(this->landinfo_data[line_nr], STR_LAND_AREA_INFORMATION_LANDINFO_COORDS, lastof(this->landinfo_data[line_nr]));
 		line_nr++;
