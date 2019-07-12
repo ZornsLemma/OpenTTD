@@ -130,6 +130,14 @@ enum RiverGeneratorEnum {
 	RG_RAINFALL     = 1,  ///< Rainfall River Generator
 };
 
+/** Town placers. */
+enum TownPlacerEnum {
+	/* Order of these enums has to be the same as in lang/english.txt
+	 * Otherwise you will get inconsistent behaviour. */
+	TWP_ORIGINAL     = 0,  ///< The original town placer
+	TWP_RAINFALL     = 1,  ///< Place towns based on data calculated by the Rainfall River Generator
+};
+
 /* Just a small base class for RiverGenerators. */
 struct RiverGenerator {
 public:

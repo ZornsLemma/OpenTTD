@@ -308,6 +308,7 @@ struct GameCreationSettings {
 	byte   town_name;                        ///< the town name generator used for town names
 	byte   landscape;                        ///< the landscape we're currently in
 	byte   water_borders;                    ///< bitset of the borders that are water
+	byte   town_placer;                      ///< the town placer
 	uint16 custom_town_number;               ///< manually entered number of towns
 	byte   variety;                          ///< variety level applied to TGP
 	byte   custom_sea_level;                 ///< manually entered percentage of water in the map

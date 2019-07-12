@@ -1089,6 +1089,9 @@ STR_RIVERS_WATER                                                :Water
 STR_RIVERS_ESSENTIAL_LAKE_TILE                                  :Essential lake tile
 STR_RIVERS_RIVER_INFO                                           :{BLACK} River {LTBLUE}{COMMA}{BLACK}, Iteration {LTBLUE}{COMMA}
 
+STR_TOWN_PLACER_ORIGINAL                                        :Original
+STR_TOWN_PLACER_RAINFALL                                        :Rainfall
+
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced
 STR_DISASTER_NORMAL                                             :Normal
@@ -1369,6 +1372,9 @@ STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_PROB                     :Probability for
 STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_PROB_HELPTEXT            :Probability (measured in 1/1000) for creating additional land tiles around some shore tile of a lake
 STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_MAX_SIZE                 :Maximum number of new land tiles around shore tile
 STR_CONFIG_SETTING_RAINFALL_LAKE_SHORE_MAX_SIZE_HELPTEXT        :In one step of creating additional land tiles around a shore tile, a random number of land tiles, but not more than this number will be generated
+
+STR_CONFIG_SETTING_TOWN_PLACER                                  :Town Placer {STRING2}
+STR_CONFIG_SETTING_TOWN_PLACER_HELPTEXT                         :Town placers (so far) decide where cities and towns are to be placed.  They do not decide how they look like in detail.
 
 STR_CONFIG_SETTING_TREE_PLACER                                  :Tree placer algorithm: {STRING2}
 STR_CONFIG_SETTING_TREE_PLACER_HELPTEXT                         :Choose the distribution of trees on the map: 'Original' plants trees uniformly scattered, 'Improved' plants them in groups
