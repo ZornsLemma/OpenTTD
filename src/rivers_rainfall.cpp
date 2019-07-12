@@ -216,6 +216,7 @@ void NumberOfLowerHeightIterator::ProcessTile(TileIndex tile, Slope slope)
 
 			if (x == 1 || y == 1 || x == (int)MapMaxX() - 1 || y == (int)MapMaxY() - 1) {
 				this->number_of_lower_tiles[tile] = 0;
+				this->ProgressAfterTileProcessed();
 				edge_tiles.insert(tile);
 			}
 		}
@@ -253,6 +254,7 @@ void NumberOfLowerHeightIterator::ProcessTile(TileIndex tile, Slope slope)
 
 		for (std::set<TileIndex>::const_iterator it = lake_center_set.begin(); it != lake_center_set.end(); it++) {
 			this->number_of_lower_tiles[*it] = 0;
+			this->ProgressAfterTileProcessed();
 		}
 
 		this->StoreNeighborTilesOfProcessedTiles(connected_component, dirty_tiles, neighbor_tiles);
@@ -344,6 +346,7 @@ void NumberOfLowerHeightIterator::ProcessTile(TileIndex tile, Slope slope)
 				/* ... and actually store the calculated number of lower tiles */
 				if (min_lower_tiles <= (int)MapSize()) {
 					this->number_of_lower_tiles[dirty_tile] = min_lower_tiles + 1;
+					this->ProgressAfterTileProcessed();
 				} else {
 					DEBUG(map, 0, "WARNING: Found dirty tile (%i,%i) with no already processed neighbor tiles.  This should not be possible here.", TileX(dirty_tile), TileY(dirty_tile));
 				}
@@ -389,10 +392,10 @@ void NumberOfLowerHeightIterator::ProcessTile(TileIndex tile, Slope slope)
 	}
 }
 
-NumberOfLowerHeightIterator::NumberOfLowerHeightIterator(HeightIndex *height_index, bool set_map_edge_tiles_to_zero) : HeightLevelIterator(height_index)
+NumberOfLowerHeightIterator::NumberOfLowerHeightIterator(HeightIndex *height_index, bool set_map_edge_tiles_to_zero, GenWorldProgress gen_world_progress) : HeightLevelIterator(height_index)
 {
 	this->number_of_lower_tiles = CallocT<int>(MapSizeX() * MapSizeY());
-	this->ReInit(set_map_edge_tiles_to_zero);
+	this->ReInit(set_map_edge_tiles_to_zero, gen_world_progress);
 
 	this->connected_component_calculator = new NumberOfLowerConnectedComponentCalculator(false);
 }
@@ -403,9 +406,10 @@ NumberOfLowerHeightIterator::~NumberOfLowerHeightIterator()
 	delete this->connected_component_calculator;
 }
 
-void NumberOfLowerHeightIterator::ReInit(bool set_map_edge_tiles_to_zero)
+void NumberOfLowerHeightIterator::ReInit(bool set_map_edge_tiles_to_zero, GenWorldProgress gen_world_progress)
 {
 	this->set_map_edge_tiles_to_zero = set_map_edge_tiles_to_zero;
+	this->gen_world_progress = gen_world_progress;
 	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
 		this->number_of_lower_tiles[n] = -1;
 	}
@@ -605,6 +609,7 @@ void CalculateFlowIterator::ProcessTile(TileIndex tile, Slope slope)
 
 		/* Store the calculated flow */
 		this->water_flow[curr_tile] = outflow;
+		this->ProgressAfterTileProcessed();
 
 		/* And finally determine where it flows to. */
 		int lower_tiles_sum = 0;
@@ -635,6 +640,7 @@ void CalculateFlowIterator::ProcessTile(TileIndex tile, Slope slope)
 			if (x > 1 && y > 1 && x < (int)MapMaxX() - 1 && y < (int)MapMaxY() - 1 && !IsTileType(curr_tile, MP_WATER)) {
 				/* Declare the tile a lake, but only if it is not at the map edge. */
 				DeclareActiveLakeCenter(this->water_info, curr_tile);
+				this->number_of_generated_lake_centers++;
 				DEBUG(map, RAINFALL_CALCULATE_FLOW_LOG_LEVEL, "........ No outflow found, declaring tile (%i,%i) a lake", TileX(curr_tile), TileY(curr_tile));
 			} else {
 				/* This means, that a potential river hits the map edge and disappears. */
@@ -1484,6 +1490,10 @@ void DefineLakesIterator::CreateLake(TileIndex tile, LakeDefinitionState &state,
 		DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Created new Lake instance for (%i,%i) since none was constructed yet.", TileX(tile), TileY(tile));
 	} else {
 		/* Reprocess existing Lake instance, iterate until we are sure that we found the lake center, and not just a consumed lake center of that Lake. */
+		lake = this->tile_to_lake[tile];
+		tile = lake->GetCenterTile();
+		state.MarkProcessed(tile);
+		/*
 		TileIndex prev_tile;
 		do {
 			lake = this->tile_to_lake[tile];
@@ -1492,7 +1502,7 @@ void DefineLakesIterator::CreateLake(TileIndex tile, LakeDefinitionState &state,
 			state.MarkProcessed(tile);
 			DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... Reusing existing lake instance, delegating to (%i,%i)", TileX(tile), TileY(tile));
 		} while (tile != prev_tile);
-
+		*/
 		/* If the Lake was already finished without outflow, do nothing, the flow simply disappears.  This is the case, if the Lake has already hit the map border. */
 		if (lake->WasFinishedWithoutOutflow()) {
 			return;
@@ -1835,7 +1845,7 @@ void DefineLakesIterator::CreateLake(TileIndex tile, LakeDefinitionState &state,
 			/* We will lower the lake surface height below, ensure that this doesn´t split the lake into pieces unreachable
 			 * from the outflow.  Do this by terraforming appropriate paths to the desired height right here.
 			 */
-			this->TerraformPathsFromCentersToOutflow(lake, outflow_tile, new_lake_height);
+//			this->TerraformPathsFromCentersToOutflow(lake, outflow_tile, new_lake_height);
 
 			/* Remove all tiles that are planned to be higher than the desired height from the lake.  Our terraforming
 			 * activities above guarantee that the lake still spans till the outflow.
@@ -1956,6 +1966,15 @@ void DefineLakesIterator::CreateLake(TileIndex tile, LakeDefinitionState &state,
 
 void DefineLakesIterator::ProcessTile(TileIndex tile, Slope slope)
 {
+	/* The total progress here is the number of lake centers generated by the CalculateFlowIterator,
+	 * thus we increase progress for any kind of lake center (active not yet processed, active already processed,
+	 * consumed).
+	 */
+	if (IsLakeCenter(this->water_info, tile)) {
+		IncreaseGeneratingWorldProgress(GWP_RAINFALL_DEFINE_LAKES);
+		DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "Increase: GWP_RAINFALL_DEFINE_LAKES");
+	}
+
 	if (water_flow[tile] >= _settings_newgame.game_creation.rainfall.flow_for_river) {
 		if (IsActiveLakeCenter(this->water_info, tile) && this->tile_to_lake.find(tile) == this->tile_to_lake.end()) {
 			/* The flow iterator has declared this a lake.  This means, this is a tile where it wasn´t able to find any
@@ -2354,9 +2373,18 @@ bool RainfallRiverGenerator::AreAffectedTilesSuitableForWater(TerraformerState &
 void RainfallRiverGenerator::ModifyFlow(int *water_flow, byte *water_info) {
 	CurveFlowModificator *curve_flow_modificator = new CurveFlowModificator(water_flow, water_info);
 	int number_of_flow_modifications = _settings_newgame.game_creation.rainfall.number_of_flow_modifications * (MapSize() / 1000);
+
+	SetGeneratingWorldProgress(GWP_RAINFALL_MODIFY_FLOW, number_of_flow_modifications / 1000);
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_MODIFY_FLOW = %i", number_of_flow_modifications / 1000);
+
 	for (int n = 0; n < number_of_flow_modifications; n++) {
 		int min_equal_directions = n < number_of_flow_modifications / 2 ? 0 : 3;
 		curve_flow_modificator->ModifyFlow(min_equal_directions);
+
+		if (n > 0 && n % 1000 == 0) {
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_MODIFY_FLOW);
+			DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "Increase: GWP_RAINFALL_MODIFY_FLOW to %i", n / 1000);
+		}
 	}
 	delete curve_flow_modificator;
 }
@@ -2622,6 +2650,9 @@ void RainfallRiverGenerator::MakeRiversWiderByDirection(bool river, bool valley,
  */
 void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int *valley_grid, std::vector<TileWithHeightAndFlow> &water_tiles)
 {
+	SetGeneratingWorldProgress(GWP_RAINFALL_WIDER_RIVERS, water_tiles.size() / 100);
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_WIDER_RIVERS = " PRINTF_SIZE "", water_tiles.size() / 100);
+
 	std::map<TileIndex, HeightAndFlow> additional_water_tiles = std::map<TileIndex, HeightAndFlow>();
 	for (int n = 0; n < (int)water_tiles.size(); n++) {
 		TileIndex tile = water_tiles[n].tile;
@@ -2670,6 +2701,11 @@ void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int 
 				Direction direction = GetFlowDirection(water_info, tile);
 				this->MakeRiversWiderByDirection(river, valley, tile, direction, reached_bound, height, slope, water_flow, water_info, define_lakes_iterator, valley_grid, additional_water_tiles);
 			}
+		}
+
+		if (n > 0 && n % 100 == 0) {
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_WIDER_RIVERS);
+			DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "Increase: GWP_RAINFALL_WIDER_RIVERS to %i", n / 100);
 		}
 	}
 
@@ -3139,7 +3175,7 @@ void RainfallRiverGenerator::PrepareLake(TileIndex tile, int *water_flow, byte *
 				DEBUG(map, 0, "WARNING: No path could be found between (%i,%i) and (%i,%i), lake tiles are:", TileX(chosen_inflow_tile), TileY(chosen_inflow_tile),
 																											   TileX(nearest_outflow_tile), TileY(nearest_outflow_tile));
 				for (std::set<TileIndex>::const_iterator it = lake_tiles->begin(); it != lake_tiles->end(); it++) {
-					DEBUG(map, 0, "(%i,%i)", TileX(*it), TileY(*it));
+					DEBUG(map, 9, "(%i,%i)", TileX(*it), TileY(*it));
 				}
 			}
 
@@ -3342,6 +3378,9 @@ void RainfallRiverGenerator::DeterminePlannedWaterTiles(std::vector<TileWithHeig
 void RainfallRiverGenerator::PrepareRiversAndLakes(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator,
 												   std::vector<TileWithValue> &extra_river_tiles)
 {
+	SetGeneratingWorldProgress(GWP_RAINFALL_PREPARE_WATER, water_tiles.size() / 100);
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_PREPARE_WATER = " PRINTF_SIZE "", water_tiles.size() / 100);
+
 	for (uint n = 0; n < water_tiles.size(); n++) {
 		TileWithHeightAndFlow tile_info = water_tiles[n];
 		TileIndex tile = tile_info.tile;
@@ -3351,6 +3390,11 @@ void RainfallRiverGenerator::PrepareRiversAndLakes(std::vector<TileWithHeightAnd
 			this->PrepareLake(tile, water_flow, water_info, define_lakes_iterator, extra_river_tiles);
 		} else {
 			this->PrepareRiverTile(tile, flow, water_flow, water_info, extra_river_tiles);
+		}
+
+		if (n > 0 && n % 100 == 0) {
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_PREPARE_WATER);
+			DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "Increase: GWP_RAINFALL_PREPARE_WATER to %i", n / 100);
 		}
 	}
 }
@@ -3375,6 +3419,8 @@ void RainfallRiverGenerator::AddExtraRiverTilesToWaterTiles(std::vector<TileWith
  */
 void RainfallRiverGenerator::GenerateRiverTiles(std::vector<TileWithHeightAndFlow> &water_tiles, byte *water_info)
 {
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_MAKE_WATER = " PRINTF_SIZE "", water_tiles.size() / 100);
+
 	/* Here, finally, we actually generate the water.
 	 * Note that this step is separated from the previous one, in order to have the chance to do a last check, wether slope is actually correct.
 	 * After all, the above algorithm has to perform some terraforming, and guaranteeing that not accidentally some river tile is terraformed
@@ -3693,6 +3739,8 @@ void RainfallRiverGenerator::FixByLocalTerraforming(std::set<TileIndex> &problem
 {
 	DEBUG(map, RAINFALL_LOCAL_TERRAFORM_LOG_LEVEL, "Starting FixByLocalTerraforming with " PRINTF_SIZE " problem tiles.", problem_tiles.size());
 
+	SetNoTotalGeneratingWorldProgress(GWP_RAINFALL_LOCAL_TERRAFORM);
+
 	std::set<TileIndex> new_problem_tiles = std::set<TileIndex>();
 	bool any_tile_improved = false;
 	int number_of_iterations = 0;
@@ -3712,6 +3760,8 @@ void RainfallRiverGenerator::FixByLocalTerraforming(std::set<TileIndex> &problem
 			} else {
 				new_problem_tiles.insert(tile);
 			}
+
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_LOCAL_TERRAFORM);
 		}
 
 		/* Finally replace the contents of the problem_tiles set with the contents for the next iteration. */
@@ -3802,6 +3852,8 @@ void RainfallRiverGenerator::FixByMovingProblemTiles(std::set<TileIndex> &proble
 				/* Tile was not fixed by the above attempts, leave for the next iteration. */
 				new_problem_tiles.insert(tile);
 			}
+
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_LOCAL_TERRAFORM);
 		}
 
 		// Finally replace the contents of the problem_tiles set with the contents for the next iteration.
@@ -4300,6 +4352,8 @@ void RainfallRiverGenerator::RegisterPossibleNewBadInclinedTiles(std::set<TileIn
  */
 void RainfallRiverGenerator::FixBadRiverSlopes(int *water_flow, byte *water_info)
 {
+	SetNoTotalGeneratingWorldProgress(GWP_RAINFALL_BAD_INCLINED);
+
 	RiverHeightConnectedComponentCalculator *connected_component_calculator = new RiverHeightConnectedComponentCalculator(water_info);
 
 	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
@@ -4330,6 +4384,8 @@ void RainfallRiverGenerator::FixBadRiverSlopes(int *water_flow, byte *water_info
 			TileIndex tile = *it;
 			int height;
 			Slope slope = GetTileSlope(tile, &height);
+
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_BAD_INCLINED);
 
 			/* Tile might have been lowered to become flat as a (quite positive) side effect of fixing another one in a previous iteration, */
 			if (slope == SLOPE_FLAT) {
@@ -4548,6 +4604,8 @@ void RainfallRiverGenerator::DeriveRivers(int *river_map, int *river_iteration, 
 		/* If a tile is not yet part of a river, create a new river */
 		if (river_map[tile] == River::TILE_UNDECIDED) {
 
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_DERIVE_RIVERS);
+
 			/* If the beginning of the river is higher than its highest point (something we want to correct using the River struct
 			 * we set up here), then we will not start at its beginning.  Thus, if there are not yet processed neighbor tiles with
 			 * smaller flow, step backwards as far as we can.  Include diagonal neighbor tiles, to decrease the chances that
@@ -4738,6 +4796,8 @@ void RainfallRiverGenerator::ConnectRivers(int *river_map, int *river_iteration,
 		int max_iteration = -1;
 		int z;
 
+		IncreaseGeneratingWorldProgress(GWP_RAINFALL_DERIVE_RIVERS);
+
 		int max_flow = -1;
 		River *max_flow_river = NULL;
 
@@ -4805,6 +4865,8 @@ void RainfallRiverGenerator::FixUpwardsRiverAfterTile(TileIndex tile, std::set<T
 	TileIndex remove_neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
 
 	std::set<TileIndex> curr_tiles = std::set<TileIndex>();
+
+	IncreaseGeneratingWorldProgress(GWT_RAINFALL_UPWARDS_RIVERS);
 
 	/* Calculate the connected component.  Note that we consider tiles of arbitrary rivers for that component.  But for the recursive call below,
      * we are only interested in tiles of the river we just process (to avoid doing the same work twice).
@@ -5115,6 +5177,8 @@ void RainfallRiverGenerator::FixRaisedRiverIslands(std::set<TileIndex> &connecte
  */
 void RainfallRiverGenerator::FixUpwardsRivers(int *river_map, int *river_iteration, std::map<int, River*> &id_to_river, int *water_flow, byte *water_info)
 {
+	SetNoTotalGeneratingWorldProgress(GWT_RAINFALL_UPWARDS_RIVERS);
+
 	RiverHeightConnectedComponentCalculator *connected_component_calculator = new RiverHeightConnectedComponentCalculator(water_info);
 	for (std::map<int, River*>::const_iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
 		int id = it->first;
@@ -5166,6 +5230,8 @@ void RainfallRiverGenerator::TryLinkRiversWithOcean(int *river_map, int *river_i
 	for (std::map<int, River*>::const_iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
 		River *river = it->second;
 		DEBUG(map, RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL, "Inspecting river %i", river->id);
+
+		IncreaseGeneratingWorldProgress(GWP_RAINFALL_FINETUNING);
 
 		int curr_iteration = INT32_MAX;         // Current iteration in river sense
 		int last_iteration = INT32_MAX;         // The last iteration of the river
@@ -5399,6 +5465,8 @@ void RainfallRiverGenerator::FixLowerTerrainNearRivers(byte *water_info, std::ma
 
 	for (std::map<int, River*>::const_iterator it = id_to_river.begin(); it != id_to_river.end(); it++) {
 		River *river = it->second;
+
+		IncreaseGeneratingWorldProgress(GWP_RAINFALL_FINETUNING);
 
 		int curr_height = _settings_game.construction.max_heightlevel + 1;
 		std::vector<TileIndex> curr_height_tiles = std::vector<TileIndex>();
@@ -5694,8 +5762,13 @@ void RainfallRiverGenerator::LowerTileForDiagonalWater(std::set<TileIndex> &prob
  *  @param water_flow water flow
  *  @param water_info water info
  */
-void RainfallRiverGenerator::LowerHigherWaterTilesUntilValid(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator)
+void RainfallRiverGenerator::LowerHigherWaterTilesUntilValid(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator,
+				GenWorldProgress gen_world_progress)
 {
+	/* What would be nice would be counting up the number of iterations below.  Unfortunately, the total number of iterations
+	 * cannot be known in advance, and simply printing a number e.g. Step 123 isn´t supported by the generating world progress.
+	 * Thus just make one step at last for now.
+	 */
 	std::set<TileIndex> processed_tiles = std::set<TileIndex>();
 
 	TileIndex neighbor_tiles[DIR_COUNT] = EMPTY_NEIGHBOR_TILES;
@@ -5815,6 +5888,7 @@ void RainfallRiverGenerator::LowerHigherWaterTilesUntilValid(std::set<TileIndex>
 			}
 
 			problem_tiles.erase(tile);
+			IncreaseGeneratingWorldProgress(gen_world_progress);
 		}
 
 		/* If some of the tiles affected by terraforming now are not suitable for water any longer, add them to the problem tiles. */
@@ -5848,7 +5922,8 @@ void RainfallRiverGenerator::LowerHigherWaterTilesUntilValid(std::set<TileIndex>
  *
  *  The task of this function is terraforming landscape on the small scale, until only planned water tiles with correct slope exist.
  */
-void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_info, std::vector<TileWithHeightAndFlow> &water_tiles, DefineLakesIterator *define_lakes_iterator)
+void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_info, std::vector<TileWithHeightAndFlow> &water_tiles, DefineLakesIterator *define_lakes_iterator,
+					GenWorldProgress gen_world_progress)
 {
 	/* Find all problem tiles, i.e. tiles that are planned as water, but not suitable in terms of slope. */
 	std::set<TileIndex> problem_tiles = std::set<TileIndex>();
@@ -5861,7 +5936,7 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
 	DEBUG(map, RAINFALL_FINETUNE_TILES_SUMMARY_LOG_LEVEL, "Will fine-tune water tiles in order to keep rivers and lakes connected");
 	DEBUG(map, RAINFALL_FINETUNE_TILES_SUMMARY_LOG_LEVEL, ".... Starting with " PRINTF_SIZE " problematic tiles", problem_tiles.size());
 
-	this->LowerHigherWaterTilesUntilValid(problem_tiles, water_flow, water_info, define_lakes_iterator);
+	this->LowerHigherWaterTilesUntilValid(problem_tiles, water_flow, water_info, define_lakes_iterator, gen_world_progress);
 }
 
 /** The generator function.  The following steps are performed in this order when generating rivers:
@@ -5890,9 +5965,11 @@ void RainfallRiverGenerator::GenerateRivers()
 {
 	/* (1) Calculate height index. */
 	HeightIndex *height_index = new HeightIndex();
-	NumberOfLowerHeightIterator *lower_iterator = new NumberOfLowerHeightIterator(height_index, false);
+	NumberOfLowerHeightIterator *lower_iterator = new NumberOfLowerHeightIterator(height_index, false, GWP_RAINFALL_REMOVE_SMALL_BASINS);
 
 	/* (2) Remove tiny basins, based on the number-of-lower-tiles measure */
+	SetGeneratingWorldProgress(GWP_RAINFALL_REMOVE_SMALL_BASINS, (MapSize() / 1000) + 1);
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_REMOVE_SMALL_BASINS = %u", (MapSize() / 1000) + 1);
 	int *calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
 	this->RemoveSmallBasins(calculated_number_of_lower_tiles);
 
@@ -5901,13 +5978,17 @@ void RainfallRiverGenerator::GenerateRivers()
 	 *     by choosing paths towards low number-of-lower-tiles numbers.
 	 */
 	height_index->Recalculate();
-	lower_iterator->ReInit(true);
+	lower_iterator->ReInit(true, GWP_RAINFALL_NUMBER_OF_LOWER);
+	SetGeneratingWorldProgress(GWP_RAINFALL_NUMBER_OF_LOWER, (MapSize() / 1000) + 1);
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_NUMBER_OF_LOWER = %u", (MapSize() / 1000) + 1);
 	calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
 
 	/* (4) Now, calculate the flow for each tile.  The flow basically is based on a simulated precipitation on each
 	 *     tile (currently, each tile gets one unit of precipitation, but more sophisticated schemes are possible).
 	 *     On the way downwards to the ocean, flow sums up.
 	 */
+	SetGeneratingWorldProgress(GWP_RAINFALL_CALCULATE_FLOW, (MapSize() / 1000) + 1);
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_CALCULATE_FLOW = %u", (MapSize() / 1000) + 1);
 	CalculateFlowIterator *flow_iterator = new CalculateFlowIterator(height_index, calculated_number_of_lower_tiles);
 	for (int h = _settings_game.construction.max_heightlevel; h >= 0; h--) {
 		flow_iterator->Calculate(h);
@@ -5926,6 +6007,9 @@ void RainfallRiverGenerator::GenerateRivers()
 	 *     Most code here is about correct bookkeeping regarding how much flow flows through the lakes.
 	 *     In particular, the case of joining neighbor lakes is non-trivial with respect to this.
 	 */
+	SetGeneratingWorldProgress(GWP_RAINFALL_DEFINE_LAKES, flow_iterator->GetNumberOfGeneratedLakeCenters());
+	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_DEFINE_LAKES = %i", flow_iterator->GetNumberOfGeneratedLakeCenters());
+
 	DefineLakesIterator *define_lakes_iterator = new DefineLakesIterator(height_index, calculated_number_of_lower_tiles, water_flow, water_info);
 	for (int h = _settings_game.construction.max_heightlevel; h >= 0; h--) {
 		define_lakes_iterator->Calculate(h);
@@ -5965,7 +6049,7 @@ void RainfallRiverGenerator::GenerateRivers()
 	 *      Note that our goal is applying this step to as few tiles as possible, as it can damage landscape in the large
 	 *      scale when applied to too many tiles.  On an 1024x1024 test map, e.g. this step is applied to 50 or 100 tiles.
 	 */
-	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator);
+	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator, GWP_RAINFALL_LOCAL_TERRAFORM);
 
 	/* (13) Inclined river slopes in some cases have no direct river counterpart upwards or downwards.
      *      while in some cases, this is perfectly ok (think e.g. of the source of a river), in other cases
@@ -5976,6 +6060,7 @@ void RainfallRiverGenerator::GenerateRivers()
 	this->FixBadRiverSlopes(water_flow, water_info);
 
 	/* (14) Derive logical rivers.  Used some fine tuning like preventing upwards flow.  Might be used for generating river names. */
+	SetNoTotalGeneratingWorldProgress(GWP_RAINFALL_DERIVE_RIVERS);
 	int *river_map = CallocT<int>(MapSizeX() * MapSizeY());
 	int *river_iteration = CallocT<int>(MapSizeX() * MapSizeY());
 	for (uint n = 0; n < MapSizeX() * MapSizeY(); n++) {
@@ -5995,6 +6080,7 @@ void RainfallRiverGenerator::GenerateRivers()
 	 *      cannot completely treat ocean tiles like river tiles.  This e.g. affects terraforming.
      *      Thus, the connection between a river and the ocean it flows to is often rather weak at this point.
 	 */
+	SetNoTotalGeneratingWorldProgress(GWP_RAINFALL_FINETUNING);
 	this->TryLinkRiversWithOcean(river_map, river_iteration, id_to_river, water_flow, water_info);
 
 	/* (18) Sometimes, lower terrain is located near a river, but the river stays at the higher heightlevel
@@ -6006,7 +6092,7 @@ void RainfallRiverGenerator::GenerateRivers()
 	/* (19) The previous patches changes situation, thus we perform another call to FineTuneTilesForWater.
 	 *      It probably doesn´t need to do more than fixing some isolated tiles...
 	 */
-	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator);
+	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator, GWP_RAINFALL_FINETUNING);
 
 	/* (20) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	this->GenerateRiverTiles(water_tiles, water_info);

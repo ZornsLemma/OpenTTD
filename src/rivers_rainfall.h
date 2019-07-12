@@ -14,6 +14,7 @@
 
 #include "direction_type.h"
 #include "landscape_util.h"
+#include "genworld.h"
 #include "slope_func.h"
 #include "slope_type.h"
 #include "terraform_func.h"
@@ -27,6 +28,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <sys/time.h>
 
 #include "genworld.h"
 #include "debug.h"
@@ -99,6 +101,7 @@ static const uint MAX_RAINFALL_MAX_SIZE = INT16_MAX;            ///< Fan delta /
 static const uint DEF_LAKE_ISLAND_MAX_SIZE = 20;                ///< Default maximum size of an island (as generated in one step, multiple islands can merge with each other and with the shore)
 static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default maximum number of shore tiles generated in one step.
 
+
 /* The following symbols are for easier maintenance of the debug loggers.  The algorithms of this
  * generator are often heuristic, and thus the question whether the generator works correctly
  * isn´t just a binary one, but rather one of, (1) generate a test map, (2) have a look wether
@@ -127,6 +130,7 @@ static const uint DEF_LAKE_SHORE_MAX_SIZE = 5;                  ///< Default max
 #define RAINFALL_DERIVE_RIVERS_LOG_LEVEL 9
 #define RAINFALL_REMOVE_UPWARDS_RIVERS_LOG_LEVEL 9
 #define RAINFALL_LINK_RIVERS_OCEAN_LOG_LEVEL 9
+#define RAINFALL_PROGRESS_LOG_LEVEL 9
 
 /** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
  *  for displaying it in the map info dialog, in order to provide easily accessible information about
@@ -238,6 +242,9 @@ private:
 	 */
 	bool set_map_edge_tiles_to_zero;
 
+	/** The number of tiles processed so far, used for map generation progress */
+	uint number_of_tiles_so_far = 0;
+
 	/** Not every tile the iterator processes has already processed neighbors (e.g. if we process a big plain).
      *  This connected component calculator comes into play for all tiles where this can happen, and
      *  calculates the whole connected component.  The iterator then starts with those tiles of the connected
@@ -247,14 +254,25 @@ private:
 
 	void StoreNeighborTilesOfProcessedTiles(std::set<TileIndex> &connected_component, std::set<TileIndex> &dirty_tiles, TileIndex neighbor_tiles[DIR_COUNT]);
 
+	GenWorldProgress gen_world_progress;
+
+	inline void ProgressAfterTileProcessed()
+	{
+		this->number_of_tiles_so_far++;
+		if (this->number_of_tiles_so_far % 1000 == 0) {
+			IncreaseGeneratingWorldProgress(this->gen_world_progress);
+			DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "Increase: gen_world_progress to %i", this->number_of_tiles_so_far / 1000);
+		}
+	}
+
  protected:
  	virtual void ProcessTile(TileIndex tile, Slope slope);
 
  public:
- 	NumberOfLowerHeightIterator(HeightIndex *height_index, bool set_map_edge_tiles_to_zero);
+ 	NumberOfLowerHeightIterator(HeightIndex *height_index, bool set_map_edge_tiles_to_zero, GenWorldProgress gen_world_progress);
 	~NumberOfLowerHeightIterator();
 
-    void ReInit(bool set_map_edge_tiles_to_zero);
+    void ReInit(bool set_map_edge_tiles_to_zero, GenWorldProgress gen_world_progress);
 
 	/** Returns the array containing the number of reachable lower tiles, calculated by this iterator.
 	 *  Note that this array is shared and controlled by this iterator, i.e. do not delete this iterator
@@ -458,9 +476,24 @@ private:
 	 */
 	byte *water_info;
 
+	/** The number of tiles processed so far, used for map generation progress */
+	uint number_of_tiles_so_far = 0;
+
+	/** The number of lake centers generated so far, used for map generation progress */
+	uint number_of_generated_lake_centers = 0;
+
 	NumberOfLowerConnectedComponentCalculator *connected_component_calculator;
 
 	void StoreNeighborTilesOfProcessedTiles(std::set<TileIndex> &base_set, std::set<TileIndex> &dirty_tiles, TileIndex neighbor_tiles[DIR_COUNT]);
+
+	inline void ProgressAfterTileProcessed()
+	{
+		this->number_of_tiles_so_far++;
+		if (this->number_of_tiles_so_far % 1000 == 0) {
+			IncreaseGeneratingWorldProgress(GWP_RAINFALL_CALCULATE_FLOW);
+			DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "Increase: GWP_RAINFALL_CALCULATE_FLOW to %i", this->number_of_tiles_so_far / 1000);
+		}
+	}
 
 protected:
 
@@ -482,6 +515,8 @@ public:
 	 *  while still using the fetched array.
 	 */
 	inline byte* GetWaterInfo() { return this->water_info; }
+
+	inline uint GetNumberOfGeneratedLakeCenters() { return this->number_of_generated_lake_centers; }
 };
 
 /** FlowModificators modify an already calculated flow on the small scale.  They are necessary, because
@@ -1257,8 +1292,8 @@ private:
 								 Direction neighbor_direction_one, Direction neighbor_direction_two, Direction diagonal_direction_one, Direction diagonal_direction_two);
 	void RegisterTilesAffectedByTerraforming(TerraformerState &terraformer_state, std::set<TileIndex> &affected_tiles, byte *water_info, int min_height, bool only_processed_tiles = true);
 	void LowerTileForDiagonalWater(std::set<TileIndex> &problem_tiles, TileIndex tile, byte *water_info, int x_offset, int y_offset, std::set<TileIndex> &affected_tiles);
-	void LowerHigherWaterTilesUntilValid(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator);
-	void FineTuneTilesForWater(int *water_flow, byte *water_info, std::vector<TileWithHeightAndFlow> &water_tiles, DefineLakesIterator *define_lakes_iterator);
+	void LowerHigherWaterTilesUntilValid(std::set<TileIndex> &problem_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, GenWorldProgress gen_world_progress);
+	void FineTuneTilesForWater(int *water_flow, byte *water_info, std::vector<TileWithHeightAndFlow> &water_tiles, DefineLakesIterator *define_lakes_iterator, GenWorldProgress gen_world_progress);
 
 	void MakeRiverTileWiderStraight(bool river, bool valley,
 									TileIndex tile, int base_flow, int dx, int dy, int desired_width, int desired_height, Slope desired_slope, int number_of_alternatives, int *water_flow, byte *water_info,

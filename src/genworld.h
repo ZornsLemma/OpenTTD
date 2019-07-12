@@ -69,6 +69,18 @@ enum GenWorldProgress {
 	GWP_MAP_INIT,    ///< Initialize/allocate the map, start economy
 	GWP_LANDSCAPE,   ///< Create the landscape
 	GWP_RIVER,       ///< Create the rivers
+	GWP_RAINFALL_REMOVE_SMALL_BASINS, ///< Rainfall river generator: Remove small basins as preparation step
+	GWP_RAINFALL_NUMBER_OF_LOWER,     ///< Rainfall river generator: Number of lower tiles measure
+	GWP_RAINFALL_CALCULATE_FLOW,      ///< Rainfall river generator: Flow calculation
+	GWP_RAINFALL_MODIFY_FLOW,         ///< Rainfall river generator: modifying flow
+	GWP_RAINFALL_DEFINE_LAKES,        ///< Rainfall river generator: defining lakes
+	GWP_RAINFALL_PREPARE_WATER,       ///< Rainfall river generator: terraforming for rivers and lakes
+	GWP_RAINFALL_WIDER_RIVERS,        ///< Rainfall river generator: wider rivers
+	GWP_RAINFALL_LOCAL_TERRAFORM,     ///< Rainfall river generator: local terraforming
+   GWP_RAINFALL_BAD_INCLINED,        ///< Rainfall river generator: fixing bad inclined slopes
+   GWP_RAINFALL_DERIVE_RIVERS,       ///< Rainfall river generator: derive logical rivers
+   GWT_RAINFALL_UPWARDS_RIVERS,      ///< Rainfall river generator: fix upwards rivers
+	GWP_RAINFALL_FINETUNING,          ///< Rainfall river generator: final terraforming
 	GWP_ROUGH_ROCKY, ///< Make rough and rocky areas
 	GWP_TOWN,        ///< Generate towns
 	GWP_INDUSTRY,    ///< Generate industries
