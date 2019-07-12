@@ -222,6 +222,13 @@ public:
 		GetString(this->landinfo_data[line_nr], STR_LAND_AREA_INFORMATION_LANDINFO_COORDS, lastof(this->landinfo_data[line_nr]));
 		line_nr++;
 
+		/* Debugging: Number of lower tiles */
+		if (_number_of_lower_tiles != NULL) {
+			SetDParam(0, _number_of_lower_tiles[tile]);
+			GetString(this->landinfo_data[line_nr], STR_RIVERS_NUMBER_OF_LOWERS_LAND_INFO, lastof(this->landinfo_data[line_nr]));
+			line_nr++;
+		}
+
 		/* Local authority */
 		SetDParam(0, STR_LAND_AREA_INFORMATION_LOCAL_AUTHORITY_NONE);
 		if (t != NULL) {

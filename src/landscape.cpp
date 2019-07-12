@@ -931,6 +931,9 @@ static void CreateDesertOrRainForest()
 	}
 }
 
+/* For now here, to avoid an linker error. */
+int *_number_of_lower_tiles = NULL;
+
 /**
  * Actually (try to) create some rivers.
  */

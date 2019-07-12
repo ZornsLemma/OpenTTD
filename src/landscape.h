@@ -18,6 +18,12 @@
 static const uint SNOW_LINE_MONTHS = 12; ///< Number of months in the snow line table.
 static const uint SNOW_LINE_DAYS   = 32; ///< Number of days in each month in the snow line table.
 
+/** Just for Debugging purposes: number_of_lower_tiles array used during river generation, preserved
+ *  for displaying it in the map info dialog, in order to provide easily accessible information about
+ *  what the algorithm did for which tile.
+ */
+extern int *_number_of_lower_tiles;
+
 /**
  * Structure describing the height of the snow line each day of the year
  * @ingroup SnowLineGroup

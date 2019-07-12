@@ -1071,6 +1071,8 @@ STR_RIVERS_MODERATE                                             :Medium
 STR_RIVERS_LOT                                                  :Many
 STR_RIVERS_DETAIL_SETTINGS                                      :Detail settings
 
+STR_RIVERS_NUMBER_OF_LOWERS_LAND_INFO                           :{BLACK}#Lower tiles: {LTBLUE}{COMMA}
+
 STR_DISASTER_NONE                                               :None
 STR_DISASTER_REDUCED                                            :Reduced
 STR_DISASTER_NORMAL                                             :Normal
