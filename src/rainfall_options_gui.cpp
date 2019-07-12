@@ -10,6 +10,7 @@
 /** @file rainfall_option_gui.cpp Expert GUI for configuring the rainfall river generator */
 
 #include "stdafx.h"
+#include "settings_type.h"
 #include "strings_func.h"
 #include "string_func.h"
 #include "window_func.h"
@@ -44,22 +45,22 @@ struct RainfallOptionWindow : Window {
 	virtual void SetStringParameters(int widget) const
 	{
 		switch (widget) {
-			case WID_RFO_FLOW_FOR_RIVER_TEXT:              SetDParam(0, 0); break;
-			case WID_RFO_LAKE_VOLUME_TEXT:                 SetDParam(0, 0); break;
-			case WID_RFO_FLOW_MODIFICATIONS_TEXT:          SetDParam(0, 0); break;
-			case WID_RFO_WIDER_RIVERS_DROPDOWN:            SetDParam(0, _widen_rivers_options[0]); break;
-			case WID_RFO_WIDER_RIVERS_MULT_TEXT:           SetDParam(0, 0); break;
-			case WID_RFO_WIDER_VALLEYS_DROPDOWN:           SetDParam(0, _widen_valleys_options[0]); break;
-			case WID_RFO_WIDER_VALLEYS_MULT_TEXT:          SetDParam(0, 0); break;
-			case WID_RFO_WIDER_VALLEYS_RANDOM_TEXT:        SetDParam(0, 0); break;
+			case WID_RFO_FLOW_FOR_RIVER_TEXT:              SetDParam(0, _settings_newgame.game_creation.rainfall.flow_for_river); break;
+			case WID_RFO_LAKE_VOLUME_TEXT:                 SetDParam(0, _settings_newgame.game_creation.rainfall.flow_per_lake_volume); break;
+			case WID_RFO_FLOW_MODIFICATIONS_TEXT:          SetDParam(0, _settings_newgame.game_creation.rainfall.number_of_flow_modifications); break;
+			case WID_RFO_WIDER_RIVERS_DROPDOWN:            SetDParam(0, _widen_rivers_options[_settings_newgame.game_creation.rainfall.wider_rivers_enabled]); break;
+			case WID_RFO_WIDER_RIVERS_MULT_TEXT:           SetDParam(0, _settings_newgame.game_creation.rainfall.wider_rivers_multiplier); break;
+			case WID_RFO_WIDER_VALLEYS_DROPDOWN:           SetDParam(0, _widen_valleys_options[_settings_newgame.game_creation.rainfall.wider_valleys_enabled]); break;
+			case WID_RFO_WIDER_VALLEYS_MULT_TEXT:          SetDParam(0, _settings_newgame.game_creation.rainfall.wider_valleys_multiplier); break;
+			case WID_RFO_WIDER_VALLEYS_RANDOM_TEXT:        SetDParam(0, _settings_newgame.game_creation.rainfall.wider_valleys_randomness); break;
 
-			case WID_RFO_OUTFLOW_CANYON_PROBABILITY_TEXT:  SetDParam(0, 0); break;
-			case WID_RFO_MINIMIZE_LAKE_PROBABILITY_TEXT:   SetDParam(0, 0); break;
-			case WID_RFO_ISLAND_PROBABILITY_TEXT:          SetDParam(0, 0); break;
-			case WID_RFO_SHORE_PROBABILITY_TEXT:           SetDParam(0, 0); break;
+			case WID_RFO_OUTFLOW_CANYON_PROBABILITY_TEXT:  SetDParam(0, _settings_newgame.game_creation.rainfall.lake_outflow_canyon_probability); break;
+			case WID_RFO_MINIMIZE_LAKE_PROBABILITY_TEXT:   SetDParam(0, _settings_newgame.game_creation.rainfall.lake_reduce_to_guaranteed_probability); break;
+			case WID_RFO_ISLAND_PROBABILITY_TEXT:          SetDParam(0, _settings_newgame.game_creation.rainfall.lake_island_probability); break;
+			case WID_RFO_SHORE_PROBABILITY_TEXT:           SetDParam(0, _settings_newgame.game_creation.rainfall.lake_shore_probability); break;
 
-			case WID_RFO_ISLAND_MAX_SIZE_TEXT:             SetDParam(0, 0); break;
-			case WID_RFO_SHORE_MAX_SIZE_TEXT:              SetDParam(0, 0); break;
+			case WID_RFO_ISLAND_MAX_SIZE_TEXT:             SetDParam(0, _settings_newgame.game_creation.rainfall.lake_island_max_size); break;
+			case WID_RFO_SHORE_MAX_SIZE_TEXT:              SetDParam(0, _settings_newgame.game_creation.rainfall.lake_shore_max_size); break;
 		}
 	}
 
