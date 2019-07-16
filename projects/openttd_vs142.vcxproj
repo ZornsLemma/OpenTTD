@@ -382,6 +382,7 @@
     <ClCompile Include="..\src\ini.cpp" />
     <ClCompile Include="..\src\ini_load.cpp" />
     <ClCompile Include="..\src\landscape.cpp" />
+    <ClCompile Include="..\src\landscape_util.cpp" />
     <ClCompile Include="..\src\linkgraph\demands.cpp" />
     <ClCompile Include="..\src\linkgraph\flowmapper.cpp" />
     <ClCompile Include="..\src\linkgraph\linkgraph.cpp" />
@@ -406,7 +407,10 @@
     <ClCompile Include="..\src\pbs.cpp" />
     <ClCompile Include="..\src\progress.cpp" />
     <ClCompile Include="..\src\rail.cpp" />
+    <ClCompile Include="..\src\rainfall_options_gui.cpp" />
     <ClCompile Include="..\src\rev.cpp" />
+    <ClCompile Include="..\src\rivers_path.cpp" />
+    <ClCompile Include="..\src\rivers_rainfall.cpp" />
     <ClCompile Include="..\src\road.cpp" />
     <ClCompile Include="..\src\roadstop.cpp" />
     <ClCompile Include="..\src\screenshot.cpp" />
@@ -532,6 +536,7 @@
     <ClInclude Include="..\src\industrytype.h" />
     <ClInclude Include="..\src\ini_type.h" />
     <ClInclude Include="..\src\landscape.h" />
+    <ClInclude Include="..\src\landscape_util.h" />
     <ClInclude Include="..\src\landscape_type.h" />
     <ClInclude Include="..\src\language.h" />
     <ClInclude Include="..\src\linkgraph\demands.h" />
@@ -615,6 +620,8 @@
     <ClInclude Include="..\src\rail_gui.h" />
     <ClInclude Include="..\src\rail_type.h" />
     <ClInclude Include="..\src\rev.h" />
+    <ClInclude Include="..\src\rivers_path.h" />
+    <ClInclude Include="..\src\rivers_rainfall.h" />
     <ClInclude Include="..\src\road.h" />
     <ClInclude Include="..\src\road_cmd.h" />
     <ClInclude Include="..\src\road_func.h" />
@@ -666,6 +673,7 @@
     <ClInclude Include="..\src\subsidy_func.h" />
     <ClInclude Include="..\src\subsidy_type.h" />
     <ClInclude Include="..\src\tar_type.h" />
+    <ClInclude Include="..\src\terraform_func.h" />
     <ClInclude Include="..\src\terraform_gui.h" />
     <ClInclude Include="..\src\textbuf_gui.h" />
     <ClInclude Include="..\src\textbuf_type.h" />
@@ -797,6 +805,7 @@
     <ClCompile Include="..\src\timetable_gui.cpp" />
     <ClCompile Include="..\src\toolbar_gui.cpp" />
     <ClCompile Include="..\src\town_gui.cpp" />
+    <ClCompile Include="..\src\town_rainfall_options_gui.cpp" />
     <ClCompile Include="..\src\train_gui.cpp" />
     <ClCompile Include="..\src\transparency_gui.cpp" />
     <ClCompile Include="..\src\tree_gui.cpp" />

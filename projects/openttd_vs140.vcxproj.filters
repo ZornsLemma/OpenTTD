@@ -234,6 +234,9 @@
     <ClCompile Include="..\src\landscape.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\landscape_util.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\linkgraph\demands.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -306,7 +309,16 @@
     <ClCompile Include="..\src\rail.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\rainfall_options_gui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\rev.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\rivers_path.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\rivers_rainfall.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\road.cpp">
@@ -684,6 +696,9 @@
     <ClInclude Include="..\src\landscape.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\landscape_util.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\landscape_type.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -933,6 +948,12 @@
     <ClInclude Include="..\src\rev.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\rivers_path.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\rivers_rainfall.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\road.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1084,6 +1105,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\tar_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\terraform_func.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\terraform_gui.h">
@@ -1477,6 +1501,9 @@
       <Filter>GUI Source Code</Filter>
     </ClCompile>
     <ClCompile Include="..\src\town_gui.cpp">
+      <Filter>GUI Source Code</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\town_rainfall_options_gui.cpp">
       <Filter>GUI Source Code</Filter>
     </ClCompile>
     <ClCompile Include="..\src\train_gui.cpp">
