@@ -32,6 +32,7 @@
 #include "rivers_rainfall.h"
 
 #include <algorithm>
+#include <chrono>
 #include <math.h>
 #include <vector>
 
@@ -5027,7 +5028,7 @@ void RainfallRiverGenerator::FixUpwardsRiverAfterTile(TileIndex tile, std::set<T
 								for (int z = DIR_BEGIN; z < DIR_END; z++) {
 									if (remove_neighbor_tiles[z] != INVALID_TILE && raised_tiles.find(remove_neighbor_tiles[z]) != raised_tiles.end()) {
 										DEBUG(map, 9, "................ Increasing neighbor_count of (%i,%i) because of (%i,%i)",
-												TileX(raised_tile), TileY(raised_tile), TileX(remove_neighbor_tiles[z]),  TileY(remove_neighbor_tiles[z])); 
+												TileX(raised_tile), TileY(raised_tile), TileX(remove_neighbor_tiles[z]),  TileY(remove_neighbor_tiles[z]));
 										neighbor_count++;
 									}
 								}
@@ -5963,18 +5964,12 @@ void RainfallRiverGenerator::FineTuneTilesForWater(int *water_flow, byte *water_
 	this->LowerHigherWaterTilesUntilValid(problem_tiles, water_flow, water_info, define_lakes_iterator, gen_world_progress);
 }
 
-int64 GetCurrentTimeMillis()
+void PrintRunningTimeToDebug(const char* step, std::chrono::time_point<std::chrono::system_clock> &base_time)
 {
-	struct timeval tp;
-	gettimeofday(&tp, NULL);
-	return (int64)(tp.tv_sec * 1000L + tp.tv_usec / 1000);
-}
-
-void PrintRunningTimeToDebug(const char* step, int64 &base_millis)
-{
-	int64 old_base_millis = base_millis;
-	base_millis = GetCurrentTimeMillis();
-	int64 length = base_millis - old_base_millis;
+	auto old_base_time = base_time;
+	base_time = std::chrono::system_clock::now();
+	std::chrono::milliseconds length_ms = std::chrono::duration_cast<std::chrono::milliseconds>(base_time - old_base_time);
+	int64 length = static_cast<int64>(length_ms.count());
 	DEBUG(map, 0, "Running time for step %s " OTTD_PRINTF64 "." OTTD_PRINTF64 "s", step, length / 1000, length % 1000);
 }
 
@@ -6400,19 +6395,19 @@ bool RainfallRiverGenerator::GenerateTowns(int *water_flow, byte *water_info, De
  */
 bool RainfallRiverGenerator::GenerateRivers()
 {
-	int64 base_millis = GetCurrentTimeMillis();
+	auto base_time = std::chrono::system_clock::now();
 
 	/* (1) Calculate height index. */
 	HeightIndex *height_index = new HeightIndex();
 	NumberOfLowerHeightIterator *lower_iterator = new NumberOfLowerHeightIterator(height_index, false, GWP_RAINFALL_REMOVE_SMALL_BASINS);
-	PrintRunningTimeToDebug(" (1) HeightIndex: ", base_millis);
+	PrintRunningTimeToDebug(" (1) HeightIndex: ", base_time);
 
 	/* (2) Remove tiny basins, based on the number-of-lower-tiles measure */
 	SetGeneratingWorldProgress(GWP_RAINFALL_REMOVE_SMALL_BASINS, (MapSize() / 1000) + 1);
 	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_REMOVE_SMALL_BASINS = %u", (MapSize() / 1000) + 1);
 	int *calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
 	this->RemoveSmallBasins(calculated_number_of_lower_tiles);
-	PrintRunningTimeToDebug(" (2) Removing small basins: ", base_millis);
+	PrintRunningTimeToDebug(" (2) Removing small basins: ", base_time);
 
 	/* (3) Recalculate height index, and number-of-lower-tiles.  The number-of-lower-tiles of a tile is a measure
      *     for the number of lower tiles one needs to pass to the ocean.  Flow, and later rivers, find the ocean
@@ -6423,7 +6418,7 @@ bool RainfallRiverGenerator::GenerateRivers()
 	SetGeneratingWorldProgress(GWP_RAINFALL_NUMBER_OF_LOWER, (MapSize() / 1000) + 1);
 	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_NUMBER_OF_LOWER = %u", (MapSize() / 1000) + 1);
 	calculated_number_of_lower_tiles = this->CalculateNumberOfLowerTiles(lower_iterator);
-	PrintRunningTimeToDebug(" (3) Number of lower tiles: ", base_millis);
+	PrintRunningTimeToDebug(" (3) Number of lower tiles: ", base_time);
 
 	/* (4) Now, calculate the flow for each tile.  The flow basically is based on a simulated precipitation on each
 	 *     tile (currently, each tile gets one unit of precipitation, but more sophisticated schemes are possible).
@@ -6437,14 +6432,14 @@ bool RainfallRiverGenerator::GenerateRivers()
 	}
 	int *water_flow = flow_iterator->GetWaterFlow();
 	byte *water_info = flow_iterator->GetWaterInfo();
-	PrintRunningTimeToDebug(" (4) Flow: ", base_millis);
+	PrintRunningTimeToDebug(" (4) Flow: ", base_time);
 
 	/* (5) Make flow paths look more random, i.e. more realistic.  Necessary, since the number of lower paths (i.e.,
      *     series of tiles with descending number-of-lower-tiles) are rather straight towards the ocean.  And we want
      *     rivers, not just straight channels.
      */
 	this->ModifyFlow(water_flow, water_info);
-	PrintRunningTimeToDebug(" (5) Modify flow: ", base_millis);
+	PrintRunningTimeToDebug(" (5) Modify flow: ", base_time);
 
 	/* (6) Define lakes, i.e. decide which tile is assigned to which lake, and which surface height lakes gain.
      *     Lakes start growing at points, where the number-of-lower-tiles iterator reported zero lower tiles.
@@ -6459,7 +6454,7 @@ bool RainfallRiverGenerator::GenerateRivers()
 		define_lakes_iterator->Calculate(h);
 	}
 
-	PrintRunningTimeToDebug(" (6) Define lakes: ", base_millis);
+	PrintRunningTimeToDebug(" (6) Define lakes: ", base_time);
 
 	/* (7) Prepare rivers and lakes, e.g. add additional corner tiles if flow direction is diagonal,
 	 *     and terraform lakes to their surface height.
@@ -6470,29 +6465,29 @@ bool RainfallRiverGenerator::GenerateRivers()
 	this->DeterminePlannedWaterTiles(water_tiles, water_flow, water_info, define_lakes_iterator);
 	this->PrepareRiversAndLakes(water_tiles, water_flow, water_info, define_lakes_iterator, extra_river_tiles);
 	this->AddExtraRiverTilesToWaterTiles(water_tiles, extra_river_tiles);
-	PrintRunningTimeToDebug(" (7) Prepare rivers and lakes: ", base_millis);
+	PrintRunningTimeToDebug(" (7) Prepare rivers and lakes: ", base_time);
 
 	/* (8) If flow exceeds certain flow bounds, optionally generate a wide river.  Using the same algorithm,
 	 *     optionally make valleys wider, to gain more space.
 	 */
 	this->GenerateWiderRivers(water_flow, water_info, define_lakes_iterator, water_tiles);
 	this->UpdateFlow(water_flow, water_tiles);
-	PrintRunningTimeToDebug(" (8) Wider rivers: ", base_millis);
+	PrintRunningTimeToDebug(" (8) Wider rivers: ", base_time);
 
 	/* (9) Find problem tiles, i.e. tiles whose slope is not suitable for becoming river. */
 	std::set<TileIndex> problem_tiles = std::set<TileIndex>();
 	GetProblemTiles(water_tiles, problem_tiles, water_info);
-	PrintRunningTimeToDebug(" (9) Find problem tiles: ", base_millis);
+	PrintRunningTimeToDebug(" (9) Find problem tiles: ", base_time);
 
 	/* (10) Try to fix them by performing terraforming on the small scale.  I.e., take the terraforming action
 	 *      out of a number of schemes for the slope at hand, that fixes most river tiles with invalid slope.
 	 */
 	this->FixByLocalTerraforming(problem_tiles, water_flow, water_info, define_lakes_iterator);
-	PrintRunningTimeToDebug(" (10) Fix by local terraforming: ", base_millis);
+	PrintRunningTimeToDebug(" (10) Fix by local terraforming: ", base_time);
 
 	/* (11) Try to fix them by moving them, or by declaring them no water if they are not necessary for keeping the river connected. */
 	this->FixByMovingProblemTiles(problem_tiles, water_flow, water_info, define_lakes_iterator);
-	PrintRunningTimeToDebug(" (11) Fix by moving problem tiles: ", base_millis);
+	PrintRunningTimeToDebug(" (11) Fix by moving problem tiles: ", base_time);
 
 	/* (12) The above algorithms worked rather heuristic.  They cannot guarantee that any planned river tile actually has
      *      correct slope (i.e., flat or inclined).  Thus, here we lower tiles until everything is ok.
@@ -6501,7 +6496,7 @@ bool RainfallRiverGenerator::GenerateRivers()
 	 *      scale when applied to too many tiles.  On an 1024x1024 test map, e.g. this step is applied to 50 or 100 tiles.
 	 */
 	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator, GWP_RAINFALL_LOCAL_TERRAFORM);
-	PrintRunningTimeToDebug(" (12) Lower tiles until valid: ", base_millis);
+	PrintRunningTimeToDebug(" (12) Lower tiles until valid: ", base_time);
 
 	/* (13) Inclined river slopes in some cases have no direct river counterpart upwards or downwards.
      *      while in some cases, this is perfectly ok (think e.g. of the source of a river), in other cases
@@ -6510,7 +6505,7 @@ bool RainfallRiverGenerator::GenerateRivers()
      *      This improves those slopes.
      */
 	this->FixBadRiverSlopes(water_flow, water_info);
-	PrintRunningTimeToDebug(" (13) Fix bad inclined river slopes: ", base_millis);
+	PrintRunningTimeToDebug(" (13) Fix bad inclined river slopes: ", base_time);
 
 	/* (14) Derive logical rivers.  Used some fine tuning like preventing upwards flow.  Might be used for generating river names. */
 	SetNoTotalGeneratingWorldProgress(GWP_RAINFALL_DERIVE_RIVERS);
@@ -6522,15 +6517,15 @@ bool RainfallRiverGenerator::GenerateRivers()
 	}
 	std::map<int, River*> id_to_river = std::map<int, River*>();
 	this->DeriveRivers(river_map, river_iteration, id_to_river, water_flow, water_info);
-	PrintRunningTimeToDebug(" (14) Derive rivers: ", base_millis);
+	PrintRunningTimeToDebug(" (14) Derive rivers: ", base_time);
 
 	/* (15) Set up connections between the logical rivers (i.e. where they join) */
 	this->ConnectRivers(river_map, river_iteration, id_to_river);
-	PrintRunningTimeToDebug(" (15) Connect rivers: ", base_millis);
+	PrintRunningTimeToDebug(" (15) Connect rivers: ", base_time);
 
 	/* (16) Get rid of rivers flowing upwards. */
 	this->FixUpwardsRivers(river_map, river_iteration, id_to_river, water_flow, water_info);
-	PrintRunningTimeToDebug(" (16) Fix upwards rivers: ", base_millis);
+	PrintRunningTimeToDebug(" (16) Fix upwards rivers: ", base_time);
 
 	/* (17) Link rivers with the ocean.  Necessary as separate step, since some of the previous algorithms
 	 *      cannot completely treat ocean tiles like river tiles.  This e.g. affects terraforming.
@@ -6538,25 +6533,25 @@ bool RainfallRiverGenerator::GenerateRivers()
 	 */
 	SetNoTotalGeneratingWorldProgress(GWP_RAINFALL_FINETUNING);
 	this->TryLinkRiversWithOcean(river_map, river_iteration, id_to_river, water_flow, water_info);
-	PrintRunningTimeToDebug(" (17) Link rivers with ocean: ", base_millis);
+	PrintRunningTimeToDebug(" (17) Link rivers with ocean: ", base_time);
 
 	/* (18) Sometimes, lower terrain is located near a river, but the river stays at the higher heightlevel
      *      for some tiles.  This behaviour is caused by the discrete nature of tiles in OpenTTD, and the need
      *      to find or terraform slopes suitable for river.  This step raises such terrain.
      */
 	this->FixLowerTerrainNearRivers(water_info, id_to_river);
-	PrintRunningTimeToDebug(" (18) Fix lower terrain near rivers: ", base_millis);
+	PrintRunningTimeToDebug(" (18) Fix lower terrain near rivers: ", base_time);
 
 	/* (19) The previous patches changes situation, thus we perform another call to FineTuneTilesForWater.
 	 *      It probably doesn´t need to do more than fixing some isolated tiles...
 	 */
 	this->FineTuneTilesForWater(water_flow, water_info, water_tiles, define_lakes_iterator, GWP_RAINFALL_FINETUNING);
-	PrintRunningTimeToDebug(" (19) Another time lower tiles until valid: ", base_millis);
+	PrintRunningTimeToDebug(" (19) Another time lower tiles until valid: ", base_time);
 
 	/* (20) Finally make tiles that are planned to be river river in the OpenTTD sense. */
 	int max_river_flow;
 	this->GenerateRiverTiles(water_tiles, water_flow, water_info, &max_river_flow);
-	PrintRunningTimeToDebug(" (20) Actually generate rivers in OpenTTD sense: ", base_millis);
+	PrintRunningTimeToDebug(" (20) Actually generate rivers in OpenTTD sense: ", base_time);
 
 	delete this->lake_connected_component_calculator;
 

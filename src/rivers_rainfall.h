@@ -29,7 +29,6 @@
 #include <map>
 #include <set>
 #include <vector>
-#include <sys/time.h>
 
 #include "genworld.h"
 #include "debug.h"
