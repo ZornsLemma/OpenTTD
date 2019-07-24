@@ -777,7 +777,7 @@ struct Lake {
 
 	/** Removes all tiles from the lake.
 	 */
-	inline void ClearLakeTiles() { this->lake_tiles.empty(); }
+	inline void ClearLakeTiles() { this->lake_tiles.clear(); }
 
 	/** Returns the begin() const iterator for the lake tiles.
 	 *  @return the begin() const iterator for the lake tiles.
