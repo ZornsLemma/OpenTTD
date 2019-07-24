@@ -1818,10 +1818,10 @@ void DefineLakesIterator::CreateLake(TileIndex tile, LakeDefinitionState &state,
 					DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, "====> ABORT: Did not find another suitable neighbor tile, although remaining_flow is left.");
 					break;
 				}
-				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... No tiles were left, increasing ref_height to %i, remaining_flow is %i, and starting again with %i tiles.",
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... No tiles were left, increasing ref_height to %i, remaining_flow is %i, and starting again with %zu tiles.",
 															 ref_height, remaining_flow, lake->GetNumberOfUnprocessedEdgeTiles());
 			} else {
-				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... %i tiles are left with remaining_flow %i", lake->GetNumberOfUnprocessedEdgeTiles(), remaining_flow);
+				DEBUG(map, RAINFALL_DEFINE_LAKES_LOG_LEVEL, ".... %zu tiles are left with remaining_flow %i", lake->GetNumberOfUnprocessedEdgeTiles(), remaining_flow);
 			}
 		}
 

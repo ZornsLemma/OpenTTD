@@ -396,7 +396,7 @@ public:
 		int MIN_BRANCH_INDEX = RiverBranchTownPlacer::MIN_BRANCH_PARAMETER;
 		return score->river_branch_score >= parameters[MIN_BRANCH_INDEX];
 	}
-	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) { return TileHeight(tile) < _settings_game.construction.max_heightlevel / 3; }
+	virtual bool PlaceAtTile(TownGridIndex c, TownScore *score, TileIndex tile, std::map<int, int> &parameters) { return TileHeight(tile) < _settings_game.construction.max_heightlevel / 3u; }
 };
 
 

@@ -375,7 +375,7 @@ std::vector<TownPlacer*> GetAllTownPlacers()
 
 /* ================================ Deserializing Town Placer Config ===============================*/
 
-static size_t FindMatchingCloseBracket(std::string &s, char open_bracket, char close_bracket, int position)
+static size_t FindMatchingCloseBracket(std::string &s, char open_bracket, char close_bracket, size_t position)
 {
 	int level = 1;
 	while (level > 0) {

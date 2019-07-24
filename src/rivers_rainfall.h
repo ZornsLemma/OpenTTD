@@ -722,7 +722,7 @@ struct Lake {
 
 	/** Returns the number of remaining unprocessed edge tiles.
 	 */
-	inline uint GetNumberOfUnprocessedEdgeTiles() { return this->unprocessed_edge_tiles.size(); }
+	inline size_t GetNumberOfUnprocessedEdgeTiles() { return this->unprocessed_edge_tiles.size(); }
 
 	/** Registers the given tile as unprocessed edge tile.
 	 *  @param tile some tile
