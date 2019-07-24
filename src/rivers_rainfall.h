@@ -773,7 +773,7 @@ struct Lake {
 	/** Returns the number of tiles of the lake.
 	 *  @return the number of tiles of the lake.
 	 */
-	inline int GetNumberOfLakeTiles() { return this->lake_tiles.size(); }
+	inline int GetNumberOfLakeTiles() { return static_cast<int>(this->lake_tiles.size()); }
 
 	/** Returns the begin() const iterator for the lake tiles.
 	 *  @return the begin() const iterator for the lake tiles.
