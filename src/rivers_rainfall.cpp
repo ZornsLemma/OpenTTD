@@ -253,7 +253,7 @@ void NumberOfLowerHeightIterator::ProcessTile(TileIndex tile, Slope slope)
 
 		// TODO: Try to find tile in lowest group, e.g. a flat tile if such a tile exists in the connected component
 		std::set<TileIndex>::const_iterator connected_component_it = connected_component.begin();
-		std::advance(connected_component_it, RandomRange(connected_component.size()));
+		std::advance(connected_component_it, RandomRange(static_cast<uint32>(connected_component.size())));
 		lake_center_set.insert(*connected_component_it);
 
 		for (std::set<TileIndex>::const_iterator it = lake_center_set.begin(); it != lake_center_set.end(); it++) {
@@ -756,7 +756,7 @@ TileIndex CurveFlowModificator::FindStartTile(int min_equal_directions)
 					candidate_tiles.push_back(tile);
 					tile = AddFlowDirectionToTile(tile, this->water_info[tile]);
 				}
-				TileIndex ret_tile = candidate_tiles[RandomRange(candidate_tiles.size())];
+				TileIndex ret_tile = candidate_tiles[RandomRange(static_cast<uint32>(candidate_tiles.size()))];
 				DEBUG(map, RAINFALL_FLOW_MODIFICATION_LOG_LEVEL, "Choosing start tile (%i,%i) for curve flow modification.", TileX(ret_tile), TileY(ret_tile));
 				return ret_tile;
 			} else {
@@ -2668,7 +2668,7 @@ void RainfallRiverGenerator::MakeRiversWiderByDirection(bool river, bool valley,
  */
 void RainfallRiverGenerator::DoGenerateWiderRivers(bool river, bool valley, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator, int *valley_grid, std::vector<TileWithHeightAndFlow> &water_tiles)
 {
-	SetGeneratingWorldProgress(GWP_RAINFALL_WIDER_RIVERS, water_tiles.size() / 100);
+	SetGeneratingWorldProgress(GWP_RAINFALL_WIDER_RIVERS, static_cast<uint>(water_tiles.size() / 100));
 	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_WIDER_RIVERS = " PRINTF_SIZE "", water_tiles.size() / 100);
 
 	std::map<TileIndex, HeightAndFlow> additional_water_tiles = std::map<TileIndex, HeightAndFlow>();
@@ -3003,7 +3003,7 @@ void RainfallRiverGenerator::PrepareLake(TileIndex tile, int *water_flow, byte *
 	TileIndex outflow_tile = lake->GetOutflowTile();
 	if (outflow_tile == INVALID_TILE) {
 		std::set<TileIndex>::const_iterator lake_tiles_it = lake_tiles->begin();
-		std::advance(lake_tiles_it, RandomRange(lake_tiles->size()));
+		std::advance(lake_tiles_it, RandomRange(static_cast<uint32>(lake_tiles->size())));
 		outflow_tile = *lake_tiles_it;
 		DEBUG(map, RAINFALL_GUARANTEED_LAKE_TILES_LOG_LEVEL, "Choosing tile (%i,%i) as outflow tile by chance, for the sake of having a connected lake.", TileX(outflow_tile), TileY(outflow_tile));
 	}
@@ -3396,7 +3396,7 @@ void RainfallRiverGenerator::DeterminePlannedWaterTiles(std::vector<TileWithHeig
 void RainfallRiverGenerator::PrepareRiversAndLakes(std::vector<TileWithHeightAndFlow> &water_tiles, int *water_flow, byte *water_info, DefineLakesIterator *define_lakes_iterator,
 												   std::vector<TileWithValue> &extra_river_tiles)
 {
-	SetGeneratingWorldProgress(GWP_RAINFALL_PREPARE_WATER, water_tiles.size() / 100);
+	SetGeneratingWorldProgress(GWP_RAINFALL_PREPARE_WATER, static_cast<uint>(water_tiles.size() / 100));
 	DEBUG(map, RAINFALL_PROGRESS_LOG_LEVEL, "SetGeneratingWorldProgress: GWP_RAINFALL_PREPARE_WATER = " PRINTF_SIZE "", water_tiles.size() / 100);
 
 	for (uint n = 0; n < water_tiles.size(); n++) {
@@ -3825,7 +3825,7 @@ void RainfallRiverGenerator::FixByMovingProblemTiles(std::set<TileIndex> &proble
 	int number_of_iterations = 0;
 
 	/* Minimum number of problem tiles reached so far */
-	uint min_number_of_problem_tiles = INT32_MAX;
+	size_t min_number_of_problem_tiles = SIZE_MAX;
 
 	/* Number of iterations so far where the number of problem tiles increased instead of decreasing. */
 	int number_of_worse_iterations = 0;
@@ -4667,7 +4667,7 @@ void RainfallRiverGenerator::DeriveRivers(int *river_map, int *river_iteration, 
 			/* Fetch final iteration, and not that it was incremented before the loop in PerformSearch terminated, thus decrement it. */
 			int iteration = search->GetIteration() - 1;
 
-			DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, ".... Completed river %i after iteration #%i, size is %i tiles; contains tiles:",
+			DEBUG(map, RAINFALL_DERIVE_RIVERS_LOG_LEVEL, ".... Completed river %i after iteration #%i, size is %zu tiles; contains tiles:",
 						curr_river_id, iteration, river->GetNumberOfTiles());
 
 			for (int n = 0; n < (int)river->tiles.size(); n++) {
@@ -4827,7 +4827,7 @@ void RainfallRiverGenerator::ConnectRivers(int *river_map, int *river_iteration,
 		River *max_flow_river = NULL;
 
 		/* Have a look at the last few iterations, and identify the (within those tiles) adjacent river with the biggest flow (if any). */
-		for (z = curr_river->tiles.size() - 1; z >= 0 && (max_iteration == -1 || river_iteration[curr_river->tiles[z]] >= max_iteration - NUMBER_OF_FINAL_ITERATIONS); z--) {
+		for (z = static_cast<int>(curr_river->tiles.size()) - 1; z >= 0 && (max_iteration == -1 || river_iteration[curr_river->tiles[z]] >= max_iteration - NUMBER_OF_FINAL_ITERATIONS); z--) {
 			TileIndex tile = curr_river->tiles[z];
 			if (max_iteration == -1) {
 				max_iteration = river_iteration[curr_river->tiles[z]];
@@ -4849,7 +4849,7 @@ void RainfallRiverGenerator::ConnectRivers(int *river_map, int *river_iteration,
 		/* If such a river is found, set up the connection */
 		if (max_flow_river != NULL) {
 			curr_river->dest_river = max_flow_river;
-			for (int n = curr_river->tiles.size() - 1; n > z; n--) {
+			for (int n = static_cast<int>(curr_river->tiles.size()) - 1; n > z; n--) {
 				TileIndex tile = curr_river->tiles[n];
 				StoreStraightNeighborTiles(tile, neighbor_tiles);
 				for (int v = 0; v < DIR_COUNT; v++) {
@@ -5264,7 +5264,7 @@ void RainfallRiverGenerator::TryLinkRiversWithOcean(int *river_map, int *river_i
 		bool near_ocean = false;                // true if and only if the river is considered to be near the ocean
 		int number_of_ocean_neighbor_tiles = 0; // How many tiles are already neighbors of the ocean?
 		int max_flow = 0;                       // Maximum flow seen
-		for (start_index = river->tiles.size() - 1; start_index >= 0; start_index--) {
+		for (start_index = static_cast<int>(river->tiles.size()) - 1; start_index >= 0; start_index--) {
 			TileIndex tile = river->tiles[start_index];
 			max_flow = max(max_flow, water_flow[tile]);
 
@@ -5325,7 +5325,7 @@ void RainfallRiverGenerator::TryLinkRiversWithOcean(int *river_map, int *river_i
 		/* The number of tiles where we succeeded in linking with the ocean */
 		int number_of_success_tiles = 0;
 
-		for (int z = river->tiles.size() - 1; z >= max(0, start_index); z--) {
+		for (int z = static_cast<int>(river->tiles.size()) - 1; z >= max(0, start_index); z--) {
 			TileIndex tile = river->tiles[z];
 
 			int x = TileX(tile);
@@ -5503,7 +5503,7 @@ void RainfallRiverGenerator::FixLowerTerrainNearRivers(byte *water_info, std::ma
 		 * Take care that we don´t miss the last heightlevel, i.e. process the tiles
 	     * always, if the last index of the tiles vector is reached.
 		 */
-		uint last_n = river->tiles.size() - 1;
+		size_t last_n = river->tiles.size() - 1;
 		for (uint n = 0; n < river->tiles.size(); n++) {
 			TileIndex tile = river->tiles[n];
 

@@ -1141,7 +1141,7 @@ struct River {
 	River(int id) { this->id = id; this->tiles = std::vector<TileIndex>(); this->max_flow = 0; this->dest_river = NULL; this->dest_river_connection = std::set<TileIndex>(); }
 
 	inline void AddTile(TileIndex tile, int flow) { this->tiles.push_back(tile); this->max_flow = max(this->max_flow, flow); }
-	inline uint GetNumberOfTiles() { return this->tiles.size(); }
+	inline size_t GetNumberOfTiles() { return this->tiles.size(); }
 	inline int GetMaxFlow() { return this->max_flow; }
 };
 

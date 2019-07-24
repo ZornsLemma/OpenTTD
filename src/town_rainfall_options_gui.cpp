@@ -140,7 +140,7 @@ struct TownPlacerGUIList {
 
 	void UpdateScrollbarCount()
 	{
-		this->scrollbar->SetCount(this->config.size());
+		this->scrollbar->SetCount(static_cast<int>(this->config.size()));
 	}
 
 	void DeleteSelectedLine()
@@ -229,7 +229,7 @@ private:
 			free(_settings_newgame.game_creation.rainfall.town_placers);
 		}
 
-		int length = config_string.size() + 1;
+		size_t length = config_string.size() + 1;
 		_settings_newgame.game_creation.rainfall.town_placers = MallocT<char>(length);
 		strecpy(_settings_newgame.game_creation.rainfall.town_placers, config_string.c_str(), _settings_newgame.game_creation.rainfall.town_placers + length);
 
