@@ -32,6 +32,7 @@ enum Direction : byte {
 	DIR_W   = 6,            ///< West
 	DIR_NW  = 7,            ///< Northwest
 	DIR_END,                ///< Used to iterate
+	DIR_COUNT = 8,          ///< Used for setting up an array indexed by direction; I added an explicit constant rather than relying on the not-explicit set DIR_END
 	INVALID_DIR = 0xFF,     ///< Flag for an invalid direction
 };
 

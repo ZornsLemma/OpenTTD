@@ -20,7 +20,9 @@ enum GenerateLandscapeWidgets {
 	WID_GL_MAPSIZE_X_PULLDOWN,          ///< Dropdown 'map X size'.
 	WID_GL_MAPSIZE_Y_PULLDOWN,          ///< Dropdown 'map Y size'.
 
-	WID_GL_TOWN_PULLDOWN,               ///< Dropdown 'No. of towns'.
+	WID_GL_TOWN_PLACER_PULLDOWN,        ///< Dropdown 'Town placer'
+	WID_GL_TOWN_AMOUNT_PULLDOWN,        ///< Dropdown 'No. of towns'.
+	WID_GL_TOWN_PLACER_EXPERT_SETTINGS, ///< Button for opening the expert settings for town placement
 	WID_GL_INDUSTRY_PULLDOWN,           ///< Dropdown 'No. of industries'.
 
 	WID_GL_GENERATE_BUTTON,             ///< 'Generate' button.
@@ -46,7 +48,9 @@ enum GenerateLandscapeWidgets {
 
 	WID_GL_TERRAIN_PULLDOWN,            ///< Dropdown 'Terrain type'.
 	WID_GL_WATER_PULLDOWN,              ///< Dropdown 'Sea level'.
-	WID_GL_RIVER_PULLDOWN,              ///< Dropdown 'Rivers'.
+	WID_GL_RIVER_GENERATOR_PULLDOWN,    ///< Dropdown 'River Generator'.
+	WID_GL_RIVER_AMOUNT_PULLDOWN,       ///< Dropdown 'River Amount'.
+	WID_GL_RIVER_EXPERT_SETTINGS_BUTTON,///< Button 'Expert Settings for Rivers'.
 	WID_GL_SMOOTHNESS_PULLDOWN,         ///< Dropdown 'Smoothness'.
 	WID_GL_VARIETY_PULLDOWN,            ///< Dropdown 'Variety distribution'.
 
@@ -73,6 +77,78 @@ enum CreateScenarioWidgets {
 	WID_CS_FLAT_LAND_HEIGHT_DOWN,  ///< Decrease flat land height.
 	WID_CS_FLAT_LAND_HEIGHT_TEXT,  ///< Clickable flat land height value.
 	WID_CS_FLAT_LAND_HEIGHT_UP,    ///< Increase flat land height.
+};
+
+/** Widgets for the expert settings for the Rainfall River Generator */
+enum RainfallOptionWidgets {
+	WID_RFO_FLOW_FOR_RIVER_DOWN,               ///< Decrease flow needed for river
+	WID_RFO_FLOW_FOR_RIVER_TEXT,               ///< Flow needed for river
+	WID_RFO_FLOW_FOR_RIVER_UP,                 ///< Increase flow needed for river
+	WID_RFO_LAKE_VOLUME_DOWN,                  ///< Decrease flow consumed per lake volume
+	WID_RFO_LAKE_VOLUME_TEXT,                  ///< Flow consumed per lake volume
+	WID_RFO_LAKE_VOLUME_UP,                    ///< Increase flow consumed per lake volume
+
+	WID_RFO_FLOW_MODIFICATIONS_DOWN,           ///< Decrease flow modifications per 1000 tiles
+	WID_RFO_FLOW_MODIFICATIONS_TEXT,           ///< Flow modifications per 1000 tiles
+	WID_RFO_FLOW_MODIFICATIONS_UP,             ///< Increase flow modifications per 1000 tiles
+	WID_RFO_WIDER_RIVERS_DROPDOWN,             ///< Optionally enable wider rivers
+	WID_RFO_WIDER_RIVERS_MULT_DOWN,            ///< Decrease multiplier for wider rivers
+	WID_RFO_WIDER_RIVERS_MULT_TEXT,            ///< Multiplier for wider rivers
+	WID_RFO_WIDER_RIVERS_MULT_UP,              ///< Increase multiplier for wider rivers
+	WID_RFO_WIDER_VALLEYS_DROPDOWN,            ///< Optionally enable wider valleys
+	WID_RFO_WIDER_VALLEYS_MULT_DOWN,           ///< Decrease multiplier for wider valleys
+	WID_RFO_WIDER_VALLEYS_MULT_TEXT,           ///< Multiplier for wider valleys
+	WID_RFO_WIDER_VALLEYS_MULT_UP,             ///< Increase multiplier for wider valleys
+	WID_RFO_WIDER_VALLEYS_RANDOM_DOWN,         ///< Decrease randomness for wider valleys
+	WID_RFO_WIDER_VALLEYS_RANDOM_TEXT,         ///< Randomness for wider valleys
+	WID_RFO_WIDER_VALLEYS_RANDOM_UP,           ///< Increase randomness for wider valleys
+
+	WID_RFO_OUTFLOW_CANYON_PROBABILITY_DOWN,   ///< Decrease probability for an outflow canyon
+	WID_RFO_OUTFLOW_CANYON_PROBABILITY_TEXT,   ///< Probability for an outflow canyon
+	WID_RFO_OUTFLOW_CANYON_PROBABILITY_UP,     ///< Increase probability for an outflow canyon
+	WID_RFO_MINIMIZE_LAKE_PROBABILITY_DOWN,    ///< Decrease probability for minimizing a lake
+	WID_RFO_MINIMIZE_LAKE_PROBABILITY_TEXT,    ///< Probability for minimizing a lake
+	WID_RFO_MINIMIZE_LAKE_PROBABILITY_UP,      ///< Increase probability for minimizing a lake
+	WID_RFO_ISLAND_PROBABILITY_DOWN,           ///< Decrease probability for island
+	WID_RFO_ISLAND_PROBABILITY_TEXT,           ///< Probability for island
+	WID_RFO_ISLAND_PROBABILITY_UP,             ///< Increase probability for island
+	WID_RFO_SHORE_PROBABILITY_DOWN,            ///< Decrease probability for shore expansion
+	WID_RFO_SHORE_PROBABILITY_TEXT,            ///< Probability for shore expansion
+	WID_RFO_SHORE_PROBABILITY_UP,              ///< Increase probability for shore expansion
+
+	WID_RFO_ISLAND_MAX_SIZE_DOWN,              ///< Decrease max size of island
+	WID_RFO_ISLAND_MAX_SIZE_TEXT,              ///< Max size of island
+	WID_RFO_ISLAND_MAX_SIZE_UP,                ///< Increase max size of island
+	WID_RFO_SHORE_MAX_SIZE_DOWN,               ///< Decrease max size of shore expansion
+	WID_RFO_SHORE_MAX_SIZE_TEXT,               ///< Max size of shore expansion
+	WID_RFO_SHORE_MAX_SIZE_UP,                 ///< Increase max size of shore expansion
+};
+
+/** Widgets for the expert settings of town placement using the Rainfall River Generator */
+enum TownRainfallOptionWidgets {
+	WID_TROP_PHASE_ONE_MATRIX,                 ///< Matrix showing phase one of town placer configuration
+	WID_TROP_PHASE_ONE_SCROLLBAR,              ///< Scrollbar for phase one of town placer configuration
+	WID_TROP_PHASE_TWO_MATRIX,                 ///< Matrix showing phase two of town placer configuration
+	WID_TROP_PHASE_TWO_SCROLLBAR,              ///< Scrollbar for phase two of town placer configuration
+	WID_TROP_PHASE_ONE_ADD_BUTTON,             ///< Add button phase one
+	WID_TROP_PHASE_ONE_EDIT_BUTTON,            ///< Edit button phase one
+	WID_TROP_PHASE_ONE_DELETE_BUTTON,          ///< Delete button phase one
+	WID_TROP_PHASE_TWO_ADD_BUTTON,             ///< Add button phase two
+	WID_TROP_PHASE_TWO_EDIT_BUTTON,            ///< Edit button phase two
+	WID_TROP_PHASE_TWO_DELETE_BUTTON,          ///< Delete button phase two
+};
+
+enum TownPlacerEditWidgets {
+	WID_TPE_CAPTION,                           ///< Caption of the Window
+	WID_TPE_TOWN_PLACER_DROPDOWN,              ///< Drop down for choosing the town placer
+	WID_TPE_WEIGHT_TEXTBOX,                    ///< Textbox for entering the weight
+	WID_TPE_HELP_LABEL_SPACER,                 ///< Vertical spacer below the How it works label
+	WID_TPE_DESC_CONTENT,                      ///< Description of town placer
+	WID_TPE_PARAM_LABEL_SELECTION,             ///< Selection in the label column
+	WID_TPE_PARAM_WIDGET_SELECTION,            ///< Selection in the widget column
+	WID_TPE_OK_BUTTON,                         ///< The ok button
+	WID_TPE_ABORT_BUTTON,                      ///< The abort button
+	WID_TPE_END,                               ///< Marker constant, for adding more widgets dynamically
 };
 
 /** Widgets of the #GenerateProgressWindow class. */

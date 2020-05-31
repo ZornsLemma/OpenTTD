@@ -63,6 +63,7 @@
 #include "roadveh.h"
 #include "fios.h"
 #include "strings_func.h"
+#include "rivers_rainfall.h"
 
 #include "void_map.h"
 #include "station_base.h"
@@ -603,7 +604,7 @@ static void IniSaveSettings(IniFile *ini, const SettingDesc *sd, const char *grp
 {
 	IniGroup *group_def = nullptr, *group;
 	IniItem *item;
-	char buf[512];
+	char buf[8192];
 	const char *s;
 	void *ptr;
 

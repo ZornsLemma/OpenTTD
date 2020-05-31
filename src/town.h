@@ -317,4 +317,9 @@ extern CargoTypes _town_cargoes_accepted;
 
 RoadType GetTownRoadType(const Town *t);
 
+TileIndex AlignTileToGrid(TileIndex tile, TownLayout layout);
+CommandCost TownCanBePlacedHere(TileIndex tile);
+void DoCreateTown(Town *t, TileIndex tile, uint32 townnameparts, TownSize size, bool city, TownLayout layout, bool manual);
+bool UndoTownCreationIfNecessary(Town *town);
+
 #endif /* TOWN_H */

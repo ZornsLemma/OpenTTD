@@ -20,6 +20,7 @@
 #include "zoom_type.h"
 #include "openttd.h"
 
+#include <string.h>
 
 /** Settings profiles and highscore tables. */
 enum SettingsProfile {
@@ -275,6 +276,30 @@ struct NetworkSettings {
 	bool   no_http_content_downloads;                     ///< do not do content downloads over HTTP
 };
 
+/** Settings for the rainfall river generator */
+struct RainfallSettings {
+	int32 flow_for_river;                                 ///< flow necessary to form a river
+	int32 flow_per_lake_volume;                           ///< flow per lake volume
+	int16 number_of_flow_modifications;                   ///< number of flow modifications per 1000 tiles
+	byte  wider_rivers_enabled;                           ///< wether to enable wider rivers
+	int16 wider_rivers_multiplier;                        ///< multiplier to use when deciding on wider rivers
+	byte  wider_valleys_enabled;                          ///< wether to enable wider valleys
+	int16 wider_valleys_multiplier;                       ///< Multiplier on river width; the resulting number of tiles will be inspected at each side of the river
+	int16 wider_valleys_randomness;                       ///< Randomness when deciding on the width of wider valleys.
+
+	uint32 small_oceans_removal_factor;                    ///< Small oceans will be removed by terraforming, if they are smaller than MapSize() divided by this value.  Set to zero to turn this feature off.
+	uint32 small_basins_removal_limit;                     ///< Small basins will be removed by terraforming, if they are smaller than this number of tiles.
+
+	uint16 lake_outflow_canyon_probability;                ///< probability (measured in 1/1000) that an outflow canyon is digged for the lake at hand
+	uint16 lake_reduce_to_guaranteed_probability;          ///< probability (measured in 1/1000) that a lake is reduced to its guaranteed tiles
+	uint16 lake_island_probability;                        ///< probability (measured in 1/1000) that a lake tile becomes an island center
+	uint16 lake_island_max_size;                           ///< RandomRange(<this number>) is the (maximum) number of tiles of a generated island
+	uint16 lake_shore_probability;                         ///< probability (measured in 1/1000) that the algorithm starts generating additional land at a shore tile of a lake
+	uint16 lake_shore_max_size;                            ///< RandomRange(<this number>) is the (maximum) number of tiles of one shore expansion region
+
+	char* town_placers;                                    ///< Town placer settings, in a json-like format because it is conceptionally a list of config objects
+};
+
 /** Settings related to the creation of games. */
 struct GameCreationSettings {
 	uint32 generation_seed;                  ///< noise seed for world generation
@@ -292,12 +317,16 @@ struct GameCreationSettings {
 	byte   town_name;                        ///< the town name generator used for town names
 	byte   landscape;                        ///< the landscape we're currently in
 	byte   water_borders;                    ///< bitset of the borders that are water
+	byte   town_placer;                      ///< the town placer
 	uint16 custom_town_number;               ///< manually entered number of towns
 	byte   variety;                          ///< variety level applied to TGP
 	byte   custom_sea_level;                 ///< manually entered percentage of water in the map
 	byte   min_river_length;                 ///< the minimum river length
 	byte   river_route_random;               ///< the amount of randomicity for the route finding
+	byte   river_generator;                  ///< the river generator
 	byte   amount_of_rivers;                 ///< the amount of rivers
+
+	RainfallSettings rainfall;               ///< settings for the rainfall river generator
 };
 
 /** Settings related to construction in-game */
