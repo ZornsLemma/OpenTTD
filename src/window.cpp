@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -119,7 +117,7 @@ WindowDesc::~WindowDesc()
 
 /**
  * Determine default width of window.
- * This is either a stored user preferred size, or the build-in default.
+ * This is either a stored user preferred size, or the built-in default.
  * @return Width in pixels.
  */
 int16 WindowDesc::GetDefaultWidth() const
@@ -129,7 +127,7 @@ int16 WindowDesc::GetDefaultWidth() const
 
 /**
  * Determine default height of window.
- * This is either a stored user preferred size, or the build-in default.
+ * This is either a stored user preferred size, or the built-in default.
  * @return Height in pixels.
  */
 int16 WindowDesc::GetDefaultHeight() const
@@ -391,7 +389,7 @@ QueryString *Window::GetQueryString(uint widnum)
  */
 /* virtual */ Point Window::GetCaretPosition() const
 {
-	if (this->nested_focus != nullptr && this->nested_focus->type == WWT_EDITBOX) {
+	if (this->nested_focus != nullptr && this->nested_focus->type == WWT_EDITBOX && !this->querystrings.empty()) {
 		return this->GetQueryString(this->nested_focus->index)->GetCaretPosition(this, this->nested_focus->index);
 	}
 
@@ -467,6 +465,15 @@ bool EditBoxInGlobalFocus()
 }
 
 /**
+ * Check if a console is focused.
+ * @return returns true if the focused window is a console, else false
+ */
+bool FocusedWindowIsConsole()
+{
+	return _focused_window && _focused_window->window_class == WC_CONSOLE;
+}
+
+/**
  * Makes no widget on this window have focus. The function however doesn't change which window has focus.
  */
 void Window::UnfocusFocusedWidget()
@@ -499,11 +506,20 @@ bool Window::SetFocusedWidget(int widget_index)
 		if (this->nested_focus->type == WWT_EDITBOX) VideoDriver::GetInstance()->EditBoxLostFocus();
 	}
 	this->nested_focus = this->GetWidget<NWidgetCore>(widget_index);
+	if (this->nested_focus->type == WWT_EDITBOX) VideoDriver::GetInstance()->EditBoxGainedFocus();
 	return true;
 }
 
 /**
- * Called when window looses focus
+ * Called when window gains focus
+ */
+void Window::OnFocus()
+{
+	if (this->nested_focus != nullptr && this->nested_focus->type == WWT_EDITBOX) VideoDriver::GetInstance()->EditBoxGainedFocus();
+}
+
+/**
+ * Called when window loses focus
  */
 void Window::OnFocusLost()
 {
@@ -1078,6 +1094,9 @@ Window::~Window()
 	/* We can't scroll the window when it's closed. */
 	if (_last_scroll_window == this) _last_scroll_window = nullptr;
 
+	/* Make sure we don't try to access non-existing query strings. */
+	this->querystrings.clear();
+
 	/* Make sure we don't try to access this window as the focused window when it doesn't exist anymore. */
 	if (_focused_window == this) {
 		this->OnFocusLost();
@@ -1314,11 +1333,17 @@ static uint GetWindowZPriority(WindowClass wc)
 			++z_priority;
 			FALLTHROUGH;
 
+		case WC_TOWN_PLACER_EDIT:
+			++z_priority;
+			FALLTHROUGH;
+
 		case WC_ERRMSG:
 		case WC_CONFIRM_POPUP_QUERY:
 		case WC_MODAL_PROGRESS:
 		case WC_NETWORK_STATUS_WINDOW:
 		case WC_SAVE_PRESET:
+		case WC_RAINFALL_OPTIONS:
+		case WC_TOWN_RAINFALL_OPTIONS:
 			++z_priority;
 			FALLTHROUGH;
 

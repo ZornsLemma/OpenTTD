@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -62,7 +60,7 @@ void LinkGraphJob::SpawnThread()
 {
 	if (!StartNewThread(&this->thread, "ottd:linkgraph", &(LinkGraphSchedule::Run), this)) {
 		/* Of course this will hang a bit.
-		 * On the other hand, if you want to play games which make this hang noticably
+		 * On the other hand, if you want to play games which make this hang noticeably
 		 * on a platform without threads then you'll probably get other problems first.
 		 * OK:
 		 * If someone comes and tells me that this hangs for him/her, I'll implement a

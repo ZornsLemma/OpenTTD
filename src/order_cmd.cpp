@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -298,14 +296,14 @@ void OrderList::Initialize(Order *chain, Vehicle *v)
 	this->num_manual_orders = 0;
 	this->num_vehicles = 1;
 	this->timetable_duration = 0;
-	this->total_duration = 0;
 
 	for (Order *o = this->first; o != nullptr; o = o->next) {
 		++this->num_orders;
 		if (!o->IsType(OT_IMPLICIT)) ++this->num_manual_orders;
-		this->timetable_duration += o->GetTimetabledWait() + o->GetTimetabledTravel();
 		this->total_duration += o->GetWaitTime() + o->GetTravelTime();
 	}
+
+	this->RecalculateTimetableDuration();
 
 	for (Vehicle *u = this->first_shared->PreviousShared(); u != nullptr; u = u->PreviousShared()) {
 		++this->num_vehicles;
@@ -313,6 +311,18 @@ void OrderList::Initialize(Order *chain, Vehicle *v)
 	}
 
 	for (const Vehicle *u = v->NextShared(); u != nullptr; u = u->NextShared()) ++this->num_vehicles;
+}
+
+/**
+ * Recomputes Timetable duration.
+ * Split out into a separate function so it can be used by afterload.
+ */
+void OrderList::RecalculateTimetableDuration()
+{
+	this->timetable_duration = 0;
+	for (Order *o = this->first; o != nullptr; o = o->next) {
+		this->timetable_duration += o->GetTimetabledWait() + o->GetTimetabledTravel();
+	}
 }
 
 /**
@@ -397,7 +407,7 @@ const Order *OrderList::GetNextDecisionNode(const Order *next, uint hops) const
  * @param v The vehicle we're looking at.
  * @param first Order to start searching at or nullptr to start at cur_implicit_order_index + 1.
  * @param hops Number of orders we have already looked at.
- * @return Next stoppping station or INVALID_STATION.
+ * @return Next stopping station or INVALID_STATION.
  * @pre The vehicle is currently loading and v->last_station_visited is meaningful.
  * @note This function may draw a random number. Don't use it from the GUI.
  */
@@ -1802,14 +1812,12 @@ void CheckOrders(const Vehicle *v)
  */
 void RemoveOrderFromAllVehicles(OrderType type, DestinationID destination, bool hangar)
 {
-	Vehicle *v;
-
 	/* Aircraft have StationIDs for depot orders and never use DepotIDs
 	 * This fact is handled specially below
 	 */
 
 	/* Go through all vehicles */
-	FOR_ALL_VEHICLES(v) {
+	for (Vehicle *v : Vehicle::Iterate()) {
 		Order *order;
 
 		order = &v->current_order;

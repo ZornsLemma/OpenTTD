@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -93,8 +91,7 @@ uint32 GetIndustryIDAtOffset(TileIndex tile, const Industry *i, uint32 cur_grfid
 static uint32 GetClosestIndustry(TileIndex tile, IndustryType type, const Industry *current)
 {
 	uint32 best_dist = UINT32_MAX;
-	const Industry *i;
-	FOR_ALL_INDUSTRIES(i) {
+	for (const Industry *i : Industry::Iterate()) {
 		if (i->type != type || i == current) continue;
 
 		best_dist = min(best_dist, DistanceManhattan(tile, i->location.tile));
@@ -147,8 +144,7 @@ static uint32 GetCountAndDistanceOfClosestInstance(byte param_setID, byte layout
 	} else {
 		/* Count only those who match the same industry type and layout filter
 		 * Unfortunately, we have to do it manually */
-		const Industry *i;
-		FOR_ALL_INDUSTRIES(i) {
+		for (const Industry *i : Industry::Iterate()) {
 			if (i->type == ind_index && i != current && (i->selected_layout == layout_filter || layout_filter == 0) && (!town_filter || i->town == current->town)) {
 				closest_dist = min(closest_dist, DistanceManhattan(current->location.tile, i->location.tile));
 				count++;
@@ -493,6 +489,16 @@ TownScopeResolver *IndustriesResolverObject::GetTown()
 	return this->town_scope;
 }
 
+GrfSpecFeature IndustriesResolverObject::GetFeature() const
+{
+	return GSF_INDUSTRIES;
+}
+
+uint32 IndustriesResolverObject::GetDebugID() const
+{
+	return GetIndustrySpec(this->industries_scope.type)->grf_prop.local_id;
+}
+
 /**
  * Perform an industry callback.
  * @param callback The callback to perform.
@@ -520,7 +526,7 @@ uint16 GetIndustryCallback(CallbackID callback, uint32 param1, uint32 param2, In
  * @param creation_type The circumstances the industry is created under.
  * @return Succeeded or failed command.
  */
-CommandCost CheckIfCallBackAllowsCreation(TileIndex tile, IndustryType type, uint layout, uint32 seed, uint16 initial_random_bits, Owner founder, IndustryAvailabilityCallType creation_type)
+CommandCost CheckIfCallBackAllowsCreation(TileIndex tile, IndustryType type, size_t layout, uint32 seed, uint16 initial_random_bits, Owner founder, IndustryAvailabilityCallType creation_type)
 {
 	const IndustrySpec *indspec = GetIndustrySpec(type);
 
@@ -529,7 +535,7 @@ CommandCost CheckIfCallBackAllowsCreation(TileIndex tile, IndustryType type, uin
 	ind.location.tile = tile;
 	ind.location.w = 0; // important to mark the industry invalid
 	ind.type = type;
-	ind.selected_layout = layout;
+	ind.selected_layout = (byte)layout;
 	ind.town = ClosestTownFromTile(tile, UINT_MAX);
 	ind.random = initial_random_bits;
 	ind.founder = founder;

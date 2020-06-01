@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -154,13 +152,13 @@ protected:
 		header = &src[1];
 	}
 
-	/** blob header accessor - use it rather than using the pointer arithmetics directly - non-const version */
+	/** blob header accessor - use it rather than using the pointer arithmetic directly - non-const version */
 	inline BlobHeader& Hdr()
 	{
 		return *(header - 1);
 	}
 
-	/** blob header accessor - use it rather than using the pointer arithmetics directly - const version */
+	/** blob header accessor - use it rather than using the pointer arithmetic directly - const version */
 	inline const BlobHeader& Hdr() const
 	{
 		return *(header - 1);

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -23,6 +21,7 @@
 #include "../script_instance.hpp"
 #include "../script_fatalerror.hpp"
 #include "script_error.hpp"
+#include "../../debug.h"
 
 #include "../../safeguards.h"
 
@@ -81,6 +80,27 @@ ScriptObject::ActiveInstance::~ActiveInstance()
 /* static */ ScriptObject *ScriptObject::GetDoCommandModeInstance()
 {
 	return GetStorage()->mode_instance;
+}
+
+/* static */ void ScriptObject::SetLastCommand(TileIndex tile, uint32 p1, uint32 p2, uint32 cmd)
+{
+	ScriptStorage *s = GetStorage();
+	DEBUG(script, 6, "SetLastCommand company=%02d tile=%06x p1=%08x p2=%08x cmd=%d", s->root_company, tile, p1, p2, cmd);
+	s->last_tile = tile;
+	s->last_p1 = p1;
+	s->last_p2 = p2;
+	s->last_cmd = cmd & CMD_ID_MASK;
+}
+
+/* static */ bool ScriptObject::CheckLastCommand(TileIndex tile, uint32 p1, uint32 p2, uint32 cmd)
+{
+	ScriptStorage *s = GetStorage();
+	DEBUG(script, 6, "CheckLastCommand company=%02d tile=%06x p1=%08x p2=%08x cmd=%d", s->root_company, tile, p1, p2, cmd);
+	if (s->last_tile != tile) return false;
+	if (s->last_p1 != p1) return false;
+	if (s->last_p2 != p2) return false;
+	if (s->last_cmd != (cmd & CMD_ID_MASK)) return false;
+	return true;
 }
 
 /* static */ void ScriptObject::SetDoCommandCosts(Money value)
@@ -303,6 +323,9 @@ ScriptObject::ActiveInstance::~ActiveInstance()
 
 	/* Only set p2 when the command does not come from the network. */
 	if (GetCommandFlags(cmd) & CMD_CLIENT_ID && p2 == 0) p2 = UINT32_MAX;
+
+	/* Store the command for command callback validation. */
+	if (!estimate_only && _networking && !_generating_world) SetLastCommand(tile, p1, p2, cmd);
 
 	/* Try to perform the command. */
 	CommandCost res = ::DoCommandPInternal(tile, p1, p2, cmd, (_networking && !_generating_world) ? ScriptObject::GetActiveInstance()->GetDoCommandCallback() : nullptr, text, false, estimate_only);

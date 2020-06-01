@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -84,7 +82,7 @@
 	EnforcePrecondition(false, IsValidGoal(goal_id));
 	EnforcePrecondition(false, ScriptObject::GetCompany() == OWNER_DEITY);
 
-	/* Ensure null as used for emtpy string. */
+	/* Ensure null as used for empty string. */
 	if (progress != nullptr && StrEmpty(progress->GetEncodedText())) {
 		progress = nullptr;
 	}
@@ -109,7 +107,7 @@
 	return g != nullptr && g->completed;
 }
 
-/* static */ bool ScriptGoal::DoQuestion(uint16 uniqueid, uint8 target, bool is_client, Text *question, QuestionType type, int buttons)
+/* static */ bool ScriptGoal::DoQuestion(uint16 uniqueid, uint32 target, bool is_client, Text *question, QuestionType type, uint32 buttons)
 {
 	CCountedPtr<Text> counter(question);
 
@@ -121,7 +119,7 @@
 	EnforcePrecondition(false, buttons < (1 << ::GOAL_QUESTION_BUTTON_COUNT));
 	EnforcePrecondition(false, (int)type < ::GOAL_QUESTION_TYPE_COUNT);
 
-	return ScriptObject::DoCommand(0, uniqueid | (target << 16) | (type << 24) | (is_client ? (1 << 31) : 0), buttons, CMD_GOAL_QUESTION, text);
+	return ScriptObject::DoCommand(0, uniqueid | (target << 16), buttons | (type << 29) | (is_client ? (1 << 31) : 0), CMD_GOAL_QUESTION, text);
 }
 
 /* static */ bool ScriptGoal::Question(uint16 uniqueid, ScriptCompany::CompanyID company, Text *question, QuestionType type, int buttons)
@@ -137,8 +135,9 @@
 {
 	EnforcePrecondition(false, ScriptGame::IsMultiplayer());
 	EnforcePrecondition(false, ScriptClient::ResolveClientID(client) != ScriptClient::CLIENT_INVALID);
-	ClientIndex c = NetworkClientInfo::GetByClientID((::ClientID)client)->index;
-	return DoQuestion(uniqueid, c, true, question, type, buttons);
+	/* Can only send 16 bits of client_id before proper fix is implemented */
+	EnforcePrecondition(false, client < (1 << 16));
+	return DoQuestion(uniqueid, client, true, question, type, buttons);
 }
 
 /* static */ bool ScriptGoal::CloseQuestion(uint16 uniqueid)

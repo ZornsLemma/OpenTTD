@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -133,7 +131,7 @@ bool ClientNetworkContentSocketHandler::Receive_SERVER_INFO(Packet *p)
 		ci->state = ContentInfo::UNSELECTED;
 	}
 
-	/* Something we don't have and has filesize 0 does not exist in te system */
+	/* Something we don't have and has filesize 0 does not exist in the system */
 	if (ci->state == ContentInfo::UNSELECTED && ci->filesize == 0) ci->state = ContentInfo::DOES_NOT_EXIST;
 
 	/* Do we already have a stub for this? */
@@ -774,7 +772,7 @@ void ClientNetworkContentSocketHandler::SendReceive()
 
 	if (this->CanSendReceive()) {
 		if (this->ReceivePackets()) {
-			/* Only update activity once a packet is received, instead of everytime we try it. */
+			/* Only update activity once a packet is received, instead of every time we try it. */
 			this->lastActivity = _realtime_tick;
 		}
 	}

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -41,13 +39,6 @@ static int _smallmap_cargo_count;    ///< Number of cargos in the link stats leg
 static uint8 _linkstat_colours_in_legenda[] = {0, 1, 3, 5, 7, 9, 11};
 
 static const int NUM_NO_COMPANY_ENTRIES = 4; ///< Number of entries in the owner legend that are not companies.
-
-static const uint8 PC_ROUGH_LAND      = 0x52; ///< Dark green palette colour for rough land.
-static const uint8 PC_GRASS_LAND      = 0x54; ///< Dark green palette colour for grass land.
-static const uint8 PC_BARE_LAND       = 0x37; ///< Brown palette colour for bare land.
-static const uint8 PC_FIELDS          = 0x25; ///< Light brown palette colour for fields.
-static const uint8 PC_TREES           = 0x57; ///< Green palette colour for trees.
-static const uint8 PC_WATER           = 0xC9; ///< Dark blue palette colour for water.
 
 /** Macro for ordinary entry of LegendAndColour */
 #define MK(a, b) {a, b, INVALID_INDUSTRYTYPE, 0, INVALID_COMPANY, true, false, false}
@@ -335,8 +326,7 @@ void BuildOwnerLegend()
 	_legend_land_owners[1].colour = _heightmap_schemes[_settings_client.gui.smallmap_land_colour].default_colour;
 
 	int i = NUM_NO_COMPANY_ENTRIES;
-	const Company *c;
-	FOR_ALL_COMPANIES(c) {
+	for (const Company *c : Company::Iterate()) {
 		_legend_land_owners[i].colour = _colour_gradient[c->colour][5];
 		_legend_land_owners[i].company = c->index;
 		_legend_land_owners[i].show_on_map = true;
@@ -879,8 +869,7 @@ void SmallMapWindow::DrawSmallMapColumn(void *dst, uint xc, uint yc, int pitch, 
  */
 void SmallMapWindow::DrawVehicles(const DrawPixelInfo *dpi, Blitter *blitter) const
 {
-	const Vehicle *v;
-	FOR_ALL_VEHICLES(v) {
+	for (const Vehicle *v : Vehicle::Iterate()) {
 		if (v->type == VEH_EFFECT) continue;
 		if (v->vehstatus & (VS_HIDDEN | VS_UNCLICKABLE)) continue;
 
@@ -918,8 +907,7 @@ void SmallMapWindow::DrawVehicles(const DrawPixelInfo *dpi, Blitter *blitter) co
  */
 void SmallMapWindow::DrawTowns(const DrawPixelInfo *dpi) const
 {
-	const Town *t;
-	FOR_ALL_TOWNS(t) {
+	for (const Town *t : Town::Iterate()) {
 		/* Remap the town coordinate */
 		Point pt = this->RemapTile(TileX(t->xy), TileY(t->xy));
 		int x = pt.x - this->subscroll - (t->cache.sign.width_small >> 1);

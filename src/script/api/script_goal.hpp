@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -211,7 +209,7 @@ protected:
 	/**
 	 * Does common checks and asks the question.
 	 */
-	static bool DoQuestion(uint16 uniqueid, uint8 target, bool is_client, Text *question, QuestionType type, int buttons);
+	static bool DoQuestion(uint16 uniqueid, uint32 target, bool is_client, Text *question, QuestionType type, uint32 buttons);
 };
 
 #endif /* SCRIPT_GOAL_HPP */

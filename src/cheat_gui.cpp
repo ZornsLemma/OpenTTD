@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -370,7 +368,7 @@ struct CheatWindow : Window {
 
 			default:
 				/* Take whatever the function returns */
-				value = ce->proc(value + ((x >= 20 + SETTING_BUTTON_WIDTH / 2) ? 1 : -1), (x >= 10 + this->box_width + SETTING_BUTTON_WIDTH / 2) ? 1 : -1);
+				value = ce->proc(value + ((x >= 10 + this->box_width + SETTING_BUTTON_WIDTH / 2) ? 1 : -1), (x >= 10 + this->box_width + SETTING_BUTTON_WIDTH / 2) ? 1 : -1);
 
 				/* The first cheat (money), doesn't return a different value. */
 				if (value != oldvalue || btn == CHT_MONEY) this->clicked = btn * 2 + 1 + ((x >= 10 + this->box_width + SETTING_BUTTON_WIDTH / 2) != rtl ? 1 : 0);

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -64,6 +62,16 @@ HouseResolverObject::HouseResolverObject(HouseID house_id, TileIndex tile, Town 
 	this->root_spritegroup = HouseSpec::Get(house_id)->grf_prop.spritegroup[0];
 }
 
+GrfSpecFeature HouseResolverObject::GetFeature() const
+{
+	return GSF_HOUSES;
+}
+
+uint32 HouseResolverObject::GetDebugID() const
+{
+	return HouseSpec::Get(this->house_scope.house_id)->grf_prop.local_id;
+}
+
 HouseClassID AllocateHouseClassID(byte grf_class_id, uint32 grfid)
 {
 	/* Start from 1 because 0 means that no class has been assigned. */
@@ -85,8 +93,7 @@ void InitializeBuildingCounts()
 {
 	memset(&_building_counts, 0, sizeof(_building_counts));
 
-	Town *t;
-	FOR_ALL_TOWNS(t) {
+	for (Town *t : Town::Iterate()) {
 		memset(&t->cache.building_counts, 0, sizeof(t->cache.building_counts));
 	}
 }

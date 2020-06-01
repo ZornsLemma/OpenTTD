@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -845,7 +843,7 @@ SQInteger ScriptList::Valuate(HSQUIRRELVM vm)
 	int nparam = sq_gettop(vm) - 1;
 
 	if (nparam < 1) {
-		return sq_throwerror(vm, "You need to give a least a Valuator as parameter to ScriptList::Valuate");
+		return sq_throwerror(vm, "You need to give at least a Valuator as parameter to ScriptList::Valuate");
 	}
 
 	/* Make sure the valuator function is really a function, and not any

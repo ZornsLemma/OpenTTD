@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -46,14 +44,6 @@ protected:
 			this->td = td;
 			this->tile_type = GetTileType(tile);
 			this->rail_type = GetTileRailType(tile);
-		}
-
-		TILE(const TILE &src)
-		{
-			tile = src.tile;
-			td = src.td;
-			tile_type = src.tile_type;
-			rail_type = src.rail_type;
 		}
 	};
 

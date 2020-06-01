@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -25,6 +23,7 @@
 #include "querystring_gui.h"
 #include "core/geometry_func.hpp"
 #include "newgrf_debug.h"
+#include "rivers_rainfall.h"
 #include "zoom_func.h"
 #include "guitimer_func.h"
 
@@ -119,7 +118,7 @@ public:
 		this->InitNested();
 
 #if defined(_DEBUG)
-#	define LANDINFOD_LEVEL 0
+#	define LANDINFOD_LEVEL 1
 #else
 #	define LANDINFOD_LEVEL 1
 #endif
@@ -219,10 +218,62 @@ public:
 		seprintf(tmp, lastof(tmp), "0x%.4X", tile);
 		SetDParam(0, TileX(tile));
 		SetDParam(1, TileY(tile));
-		SetDParam(2, GetTileZ(tile));
+		SetDParam(2, TileHeight(tile));
 		SetDParamStr(3, tmp);
 		GetString(this->landinfo_data[line_nr], STR_LAND_AREA_INFORMATION_LANDINFO_COORDS, lastof(this->landinfo_data[line_nr]));
 		line_nr++;
+
+		/* Debugging: Number of lower tiles */
+		if (_number_of_lower_tiles != NULL) {
+			SetDParam(0, _number_of_lower_tiles[tile]);
+			GetString(this->landinfo_data[line_nr], STR_RIVERS_NUMBER_OF_LOWERS_LAND_INFO, lastof(this->landinfo_data[line_nr]));
+			line_nr++;
+		}
+
+		/* Debugging: Water flow and direction */
+		if (_water_flow != NULL && _water_info != NULL) {
+			byte water_type = (byte)GB(_water_info[tile], 3, 3);
+			switch (water_type) {
+				case 2: SetDParam(0, STR_RIVERS_RIVER); break;
+				case 3: SetDParam(0, STR_RIVERS_LAKE); break;
+				case 4: SetDParam(0, STR_RIVERS_LAKE_CENTER); break;
+				case 5: SetDParam(0, STR_RIVERS_CONSUMED_LAKE_CENTER); break;
+				default: SetDParam(0, STR_RIVERS_WATER);
+			}
+			SetDParam(1, _water_flow[tile]);
+
+			uint direction = GB(_water_info[tile], 0, 3);
+			switch (direction) {
+				case 0: SetDParam(2, STR_RIVERS_NORTH); break;
+				case 1: SetDParam(2, STR_RIVERS_NORTHEAST); break;
+				case 2: SetDParam(2, STR_RIVERS_EAST); break;
+				case 3: SetDParam(2, STR_RIVERS_SOUTHEAST); break;
+				case 4: SetDParam(2, STR_RIVERS_SOUTH); break;
+				case 5: SetDParam(2, STR_RIVERS_SOUTHWEST); break;
+				case 6: SetDParam(2, STR_RIVERS_WEST); break;
+				case 7: SetDParam(2, STR_RIVERS_NORTHWEST); break;
+				default: ;// Impossible default case, as we fetch just three bits above
+			}
+
+			GetString(this->landinfo_data[line_nr], STR_RIVERS_FLOW_INFO, lastof(this->landinfo_data[line_nr]));
+			line_nr++;
+		}
+
+		/* Debugging: Essential lake tiles */
+		if (_water_info != NULL) {
+			if (GB(_water_info[tile], 6, 1)) {
+				GetString(this->landinfo_data[line_nr], STR_RIVERS_ESSENTIAL_LAKE_TILE, lastof(this->landinfo_data[line_nr]));
+				line_nr++;
+			}
+		}
+
+		/* Debugging: River id and iteration */
+		if (_river_map != NULL && _river_iteration != NULL) {
+			SetDParam(0, _river_map[tile]);
+			SetDParam(1, _river_iteration[tile]);
+			GetString(this->landinfo_data[line_nr], STR_RIVERS_RIVER_INFO, lastof(this->landinfo_data[line_nr]));
+			line_nr++;
+		}
 
 		/* Local authority */
 		SetDParam(0, STR_LAND_AREA_INFORMATION_LOCAL_AUTHORITY_NONE);
@@ -423,6 +474,7 @@ static const char * const _credits[] = {
 	"  Ulf Hermann (fonsinchen) - Cargo Distribution (since 1.3)",
 	"  Christoph Elsenhans (frosch) - General coding (since 0.6)",
 	"  Lo\xC3\xAF""c Guilloux (glx) - General / Windows Expert (since 0.4.5)",
+	"  Charles Pigott (LordAro) - General / Correctness police (since 1.9)",
 	"  Michael Lutz (michi_cc) - Path based signals (since 0.7)",
 	"  Niels Martin Hansen (nielsm) - Music system, general coding (since 1.9)",
 	"  Owen Rudge (orudge) - Forum host, OS/2 port (since 0.1)",
@@ -462,6 +514,7 @@ static const char * const _credits[] = {
 	"  Mike Ragsdale - OpenTTD installer",
 	"  Christian Rosentreter (tokai) - MorphOS / AmigaOS port",
 	"  Richard Kempton (richK) - additional airports, initial TGP implementation",
+	"  HvS - titlegame",
 	"",
 	"  Alberto Demichelis - Squirrel scripting language \xC2\xA9 2003-2008",
 	"  L. Peter Deutsch - MD5 implementation \xC2\xA9 1999, 2000, 2002",
@@ -960,6 +1013,21 @@ void QueryString::ClickEditBox(Window *w, Point pt, int wid, int click_count, bo
 	}
 }
 
+void QueryString::SetString(StringID str)
+{
+	char *last_of = &this->text.buf[this->text.max_bytes - 1];
+	GetString(this->text.buf, str, last_of);
+	str_validate(this->text.buf, last_of, SVS_NONE);
+
+	/* Make sure the name isn't too long for the text buffer in the number of
+	 * characters (not bytes). max_chars also counts the '\0' characters. */
+	while (Utf8StringLength(this->text.buf) + 1 > this->text.max_chars) {
+		*Utf8PrevChar(this->text.buf + strlen(this->text.buf)) = '\0';
+	}
+
+	this->text.UpdateSize();
+}
+
 /** Class for the string query window. */
 struct QueryStringWindow : public Window
 {
@@ -970,17 +1038,7 @@ struct QueryStringWindow : public Window
 	QueryStringWindow(StringID str, StringID caption, uint max_bytes, uint max_chars, WindowDesc *desc, Window *parent, CharSetFilter afilter, QueryStringFlags flags) :
 			Window(desc), editbox(max_bytes, max_chars)
 	{
-		char *last_of = &this->editbox.text.buf[this->editbox.text.max_bytes - 1];
-		GetString(this->editbox.text.buf, str, last_of);
-		str_validate(this->editbox.text.buf, last_of, SVS_NONE);
-
-		/* Make sure the name isn't too long for the text buffer in the number of
-		 * characters (not bytes). max_chars also counts the '\0' characters. */
-		while (Utf8StringLength(this->editbox.text.buf) + 1 > this->editbox.text.max_chars) {
-			*Utf8PrevChar(this->editbox.text.buf + strlen(this->editbox.text.buf)) = '\0';
-		}
-
-		this->editbox.text.UpdateSize();
+		editbox.SetString(str);
 
 		if ((flags & QSF_ACCEPT_UNCHANGED) == 0) this->editbox.orig = stredup(this->editbox.text.buf);
 

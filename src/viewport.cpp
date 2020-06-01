@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -83,6 +81,7 @@
 #include "window_gui.h"
 #include "linkgraph/linkgraph_gui.h"
 #include "viewport_kdtree.h"
+#include "town_kdtree.h"
 #include "viewport_sprite_sorter.h"
 #include "bridge_map.h"
 #include "company_base.h"
@@ -1039,11 +1038,48 @@ static void DrawTileHighlightType(const TileInfo *ti, TileHighlightType tht)
 }
 
 /**
+ * Highlights tiles insede local authority of selected towns.
+ * @param *ti TileInfo Tile that is being drawn
+ */
+static void HighlightTownLocalAuthorityTiles(const TileInfo *ti)
+{
+	/* Going through cases in order of computational time. */
+
+	if (_town_local_authority_kdtree.Count() == 0) return;
+
+	/* Tile belongs to town regardless of distance from town. */
+	if (GetTileType(ti->tile) == MP_HOUSE) {
+		if (!Town::GetByTile(ti->tile)->show_zone) return;
+
+		DrawTileSelectionRect(ti, PALETTE_CRASH);
+		return;
+	}
+
+	/* If the closest town in the highlighted list is far, we can stop searching. */
+	TownID tid = _town_local_authority_kdtree.FindNearest(TileX(ti->tile), TileY(ti->tile));
+	Town *closest_highlighted_town = Town::Get(tid);
+
+	if (DistanceManhattan(ti->tile, closest_highlighted_town->xy) >= _settings_game.economy.dist_local_authority) return;
+
+	/* Tile is inside of the local autrhority distance of a highlighted town,
+	   but it is possible that a non-highlighted town is even closer. */
+	Town *closest_town = ClosestTownFromTile(ti->tile, _settings_game.economy.dist_local_authority);
+
+	if (closest_town->show_zone) {
+		DrawTileSelectionRect(ti, PALETTE_CRASH);
+	}
+
+}
+
+/**
  * Checks if the specified tile is selected and if so draws selection using correct selectionstyle.
  * @param *ti TileInfo Tile that is being drawn
  */
 static void DrawTileSelection(const TileInfo *ti)
 {
+	/* Highlight tiles insede local authority of selected towns. */
+	HighlightTownLocalAuthorityTiles(ti);
+
 	/* Draw a red error square? */
 	bool is_redsq = _thd.redsq == ti->tile;
 	if (is_redsq) DrawTileSelectionRect(ti, PALETTE_TILE_RED_PULSATING);
@@ -1692,7 +1728,7 @@ void ViewportDoDraw(const ViewPort *vp, int left, int top, int right, int bottom
  */
 static void ViewportDrawChk(const ViewPort *vp, int left, int top, int right, int bottom)
 {
-	if (ScaleByZoom(bottom - top, vp->zoom) * ScaleByZoom(right - left, vp->zoom) > (int)(180000 * ZOOM_LVL_BASE * ZOOM_LVL_BASE)) {
+	if ((int64)ScaleByZoom(bottom - top, vp->zoom) * (int64)ScaleByZoom(right - left, vp->zoom) > (int64)(180000 * ZOOM_LVL_BASE * ZOOM_LVL_BASE)) {
 		if ((bottom - top) > (right - left)) {
 			int t = (top + bottom) >> 1;
 			ViewportDrawChk(vp, left, top, right, t);
@@ -2142,13 +2178,9 @@ ViewportSignKdtreeItem ViewportSignKdtreeItem::MakeStation(StationID id)
 	item.id.station = id;
 
 	const Station *st = Station::Get(id);
-	Point pt = RemapCoords(TileX(st->xy) * TILE_SIZE, TileY(st->xy) * TILE_SIZE, GetTileMaxZ(st->xy) * TILE_HEIGHT);
-
-	pt.y -= 32 * ZOOM_LVL_BASE;
-	if ((st->facilities & FACIL_AIRPORT) && st->airport.type == AT_OILRIG) pt.y -= 16 * ZOOM_LVL_BASE;
-
-	item.center = pt.x;
-	item.top = pt.y;
+	assert(st->sign.kdtree_valid);
+	item.center = st->sign.center;
+	item.top = st->sign.top;
 
 	/* Assume the sign can be a candidate for drawing, so measure its width */
 	_viewport_sign_maxwidth = max<int>(_viewport_sign_maxwidth, st->sign.width_normal);
@@ -2163,12 +2195,9 @@ ViewportSignKdtreeItem ViewportSignKdtreeItem::MakeWaypoint(StationID id)
 	item.id.station = id;
 
 	const Waypoint *st = Waypoint::Get(id);
-	Point pt = RemapCoords(TileX(st->xy) * TILE_SIZE, TileY(st->xy) * TILE_SIZE, GetTileMaxZ(st->xy) * TILE_HEIGHT);
-
-	pt.y -= 32 * ZOOM_LVL_BASE;
-
-	item.center = pt.x;
-	item.top = pt.y;
+	assert(st->sign.kdtree_valid);
+	item.center = st->sign.center;
+	item.top = st->sign.top;
 
 	/* Assume the sign can be a candidate for drawing, so measure its width */
 	_viewport_sign_maxwidth = max<int>(_viewport_sign_maxwidth, st->sign.width_normal);
@@ -2183,14 +2212,9 @@ ViewportSignKdtreeItem ViewportSignKdtreeItem::MakeTown(TownID id)
 	item.id.town = id;
 
 	const Town *town = Town::Get(id);
-	/* Avoid using RemapCoords2, it has dependency on the foundations status of the tile, and that can be unavailable during saveload, leading to crashes.
-	 * Instead "fake" foundations by taking the highest Z coordinate of any corner of the tile. */
-	Point pt = RemapCoords(TileX(town->xy) * TILE_SIZE, TileY(town->xy) * TILE_SIZE, GetTileMaxZ(town->xy) * TILE_HEIGHT);
-
-	pt.y -= 24 * ZOOM_LVL_BASE;
-
-	item.center = pt.x;
-	item.top = pt.y;
+	assert(town->cache.sign.kdtree_valid);
+	item.center = town->cache.sign.center;
+	item.top = town->cache.sign.top;
 
 	/* Assume the sign can be a candidate for drawing, so measure its width */
 	_viewport_sign_maxwidth = max<int>(_viewport_sign_maxwidth, town->cache.sign.width_normal);
@@ -2205,12 +2229,9 @@ ViewportSignKdtreeItem ViewportSignKdtreeItem::MakeSign(SignID id)
 	item.id.sign = id;
 
 	const Sign *sign = Sign::Get(id);
-	Point pt = RemapCoords(sign->x, sign->y, sign->z);
-
-	pt.y -= 6 * ZOOM_LVL_BASE;
-
-	item.center = pt.x;
-	item.top = pt.y;
+	assert(sign->sign.kdtree_valid);
+	item.center = sign->sign.center;
+	item.top = sign->sign.top;
 
 	/* Assume the sign can be a candidate for drawing, so measure its width */
 	_viewport_sign_maxwidth = max<int>(_viewport_sign_maxwidth, sign->sign.width_normal);
@@ -2226,24 +2247,20 @@ void RebuildViewportKdtree()
 	std::vector<ViewportSignKdtreeItem> items;
 	items.reserve(BaseStation::GetNumItems() + Town::GetNumItems() + Sign::GetNumItems());
 
-	const Station *st;
-	FOR_ALL_STATIONS(st) {
-		items.push_back(ViewportSignKdtreeItem::MakeStation(st->index));
+	for (const Station *st : Station::Iterate()) {
+		if (st->sign.kdtree_valid) items.push_back(ViewportSignKdtreeItem::MakeStation(st->index));
 	}
 
-	const Waypoint *wp;
-	FOR_ALL_WAYPOINTS(wp) {
-		items.push_back(ViewportSignKdtreeItem::MakeWaypoint(wp->index));
+	for (const Waypoint *wp : Waypoint::Iterate()) {
+		if (wp->sign.kdtree_valid) items.push_back(ViewportSignKdtreeItem::MakeWaypoint(wp->index));
 	}
 
-	const Town *town;
-	FOR_ALL_TOWNS(town) {
-		items.push_back(ViewportSignKdtreeItem::MakeTown(town->index));
+	for (const Town *town : Town::Iterate()) {
+		if (town->cache.sign.kdtree_valid) items.push_back(ViewportSignKdtreeItem::MakeTown(town->index));
 	}
 
-	const Sign *sign;
-	FOR_ALL_SIGNS(sign) {
-		items.push_back(ViewportSignKdtreeItem::MakeSign(sign->index));
+	for (const Sign *sign : Sign::Iterate()) {
+		if (sign->sign.kdtree_valid) items.push_back(ViewportSignKdtreeItem::MakeSign(sign->index));
 	}
 
 	_viewport_sign_kdtree.Build(items.begin(), items.end());

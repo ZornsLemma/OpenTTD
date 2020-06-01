@@ -234,6 +234,9 @@
     <ClCompile Include="..\src\landscape.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\landscape_util.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\linkgraph\demands.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -306,13 +309,25 @@
     <ClCompile Include="..\src\rail.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\rainfall_options_gui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\rev.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\rivers_path.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\rivers_rainfall.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\road.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\roadstop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\screenshot_gui.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\screenshot.cpp">
@@ -684,6 +699,9 @@
     <ClInclude Include="..\src\landscape.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\landscape_util.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\landscape_type.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -834,6 +852,9 @@
     <ClInclude Include="..\src\newgrf_object.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\newgrf_profiling.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\newgrf_properties.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -933,6 +954,12 @@
     <ClInclude Include="..\src\rev.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\rivers_path.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\rivers_rainfall.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\road.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -963,10 +990,16 @@
     <ClInclude Include="..\src\screenshot.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\screenshot_gui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\sound\sdl_s.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\video\sdl_v.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\video\sdl2_v.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\settings_func.h">
@@ -1084,6 +1117,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\tar_type.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\terraform_func.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\src\terraform_gui.h">
@@ -1479,6 +1515,9 @@
     <ClCompile Include="..\src\town_gui.cpp">
       <Filter>GUI Source Code</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\town_rainfall_options_gui.cpp">
+      <Filter>GUI Source Code</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\train_gui.cpp">
       <Filter>GUI Source Code</Filter>
     </ClCompile>
@@ -1621,6 +1660,9 @@
       <Filter>Widgets</Filter>
     </ClInclude>
     <ClInclude Include="..\src\widgets\road_widget.h">
+      <Filter>Widgets</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\widgets\screenshot_widget.h">
       <Filter>Widgets</Filter>
     </ClInclude>
     <ClInclude Include="..\src\widgets\settings_widget.h">
@@ -2784,6 +2826,9 @@
     <ClCompile Include="..\src\newgrf_object.cpp">
       <Filter>NewGRF</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\newgrf_profiling.cpp">
+      <Filter>NewGRF</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\newgrf_railtype.cpp">
       <Filter>NewGRF</Filter>
     </ClCompile>
@@ -3066,6 +3111,9 @@
     <ClCompile Include="..\src\video\sdl_v.cpp">
       <Filter>Video</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\video\sdl2_v.cpp">
+      <Filter>Video</Filter>
+    </ClCompile>
     <ClCompile Include="..\src\video\win32_v.cpp">
       <Filter>Video</Filter>
     </ClCompile>
@@ -3085,6 +3133,9 @@
       <Filter>Sound</Filter>
     </ClCompile>
     <ClCompile Include="..\src\sound\sdl_s.cpp">
+      <Filter>Sound</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\sound\sdl2_s.cpp">
       <Filter>Sound</Filter>
     </ClCompile>
     <ClCompile Include="..\src\sound\win32_s.cpp">

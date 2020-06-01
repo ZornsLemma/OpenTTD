@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -37,8 +35,8 @@ static inline uint TileHeight(TileIndex tile)
 /**
  * Returns the height of a tile, also for tiles outside the map (virtual "black" tiles).
  *
- * @param x X coordinate of the tile, may be ouside the map.
- * @param y Y coordinate of the tile, may be ouside the map.
+ * @param x X coordinate of the tile, may be outside the map.
+ * @param y Y coordinate of the tile, may be outside the map.
  * @return The height in the same unit as TileHeight.
  */
 static inline uint TileHeightOutsideMap(int x, int y)
@@ -79,8 +77,8 @@ static inline uint TilePixelHeight(TileIndex tile)
 /**
  * Returns the height of a tile in pixels, also for tiles outside the map (virtual "black" tiles).
  *
- * @param x X coordinate of the tile, may be ouside the map.
- * @param y Y coordinate of the tile, may be ouside the map.
+ * @param x X coordinate of the tile, may be outside the map.
+ * @param y Y coordinate of the tile, may be outside the map.
  * @return The height in pixels in the same unit as TilePixelHeight.
  */
 static inline uint TilePixelHeightOutsideMap(int x, int y)
@@ -267,6 +265,7 @@ static inline void SetAnimationFrame(TileIndex t, byte frame)
 	_me[t].m7 = frame;
 }
 
+Slope GetTileSlopeGivenHeight(int hnorth, int hwest, int heast, int hsouth, int *h);
 Slope GetTileSlope(TileIndex tile, int *h = nullptr);
 int GetTileZ(TileIndex tile);
 int GetTileMaxZ(TileIndex tile);

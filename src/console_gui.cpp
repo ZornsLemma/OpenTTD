@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -281,7 +279,7 @@ struct IConsoleWindow : Window
 
 			case WKC_RETURN: case WKC_NUM_ENTER: {
 				/* We always want the ] at the left side; we always force these strings to be left
-				 * aligned anyway. So enforce this in all cases by addding a left-to-right marker,
+				 * aligned anyway. So enforce this in all cases by adding a left-to-right marker,
 				 * otherwise it will be drawn at the wrong side with right-to-left texts. */
 				IConsolePrintF(CC_COMMAND, LRM "] %s", _iconsole_cmdline.buf);
 				const char *cmd = IConsoleHistoryAdd(_iconsole_cmdline.buf);
@@ -372,6 +370,11 @@ struct IConsoleWindow : Window
 	void OnMouseWheel(int wheel) override
 	{
 		this->Scroll(-wheel);
+	}
+
+	void OnFocus() override
+	{
+		VideoDriver::GetInstance()->EditBoxGainedFocus();
 	}
 
 	void OnFocusLost() override

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -553,12 +551,12 @@ CommandCost CmdBuildBridge(TileIndex end_tile, DoCommandFlag flags, uint32 p1, u
 		YapfNotifyTrackLayoutChange(tile_start, track);
 	}
 
-	/* for human player that builds the bridge he gets a selection to choose from bridges (DC_QUERY_COST)
-	 * It's unnecessary to execute this command every time for every bridge. So it is done only
-	 * and cost is computed in "bridge_gui.c". For AI, Towns this has to be of course calculated
-	 */
+	/* Human players that build bridges get a selection to choose from (DC_QUERY_COST)
+	 * It's unnecessary to execute this command every time for every bridge.
+	 * So it is done only for humans and cost is computed in bridge_gui.cpp.
+	 * For (non-spectated) AI, Towns this has to be of course calculated. */
 	Company *c = Company::GetIfValid(company);
-	if (!(flags & DC_QUERY_COST) || (c != nullptr && c->is_ai)) {
+	if (!(flags & DC_QUERY_COST) || (c != nullptr && c->is_ai && company != _local_company)) {
 		bridge_len += 2; // begin and end tiles/ramps
 
 		switch (transport_type) {
@@ -1107,6 +1105,32 @@ static void DrawBridgePillars(const PalSpriteID *psid, const TileInfo *ti, Axis 
 }
 
 /**
+ * Retrieve the sprites required for catenary on a road/tram bridge.
+ * @param rti              RoadTypeInfo for the road or tram type to get catenary for
+ * @param head_tile        Bridge head tile with roadtype information
+ * @param offset           Sprite offset identifying flat to sloped bridge tiles
+ * @param head             Are we drawing bridge head?
+ * @param[out] spr_back    Back catenary sprite to use
+ * @param[out] spr_front   Front catenary sprite to use
+ */
+static void GetBridgeRoadCatenary(const RoadTypeInfo *rti, TileIndex head_tile, int offset, bool head, SpriteID &spr_back, SpriteID &spr_front)
+{
+	static const SpriteID back_offsets[6]  = { 95,  96,  99, 102, 100, 101 };
+	static const SpriteID front_offsets[6] = { 97,  98, 103, 106, 104, 105 };
+
+	/* Simplified from DrawRoadTypeCatenary() to remove all the special cases required for regular ground road */
+	spr_back = GetCustomRoadSprite(rti, head_tile, ROTSG_CATENARY_BACK, head ? TCX_NORMAL : TCX_ON_BRIDGE);
+	spr_front = GetCustomRoadSprite(rti, head_tile, ROTSG_CATENARY_FRONT, head ? TCX_NORMAL : TCX_ON_BRIDGE);
+	if (spr_back == 0 && spr_front == 0) {
+		spr_back = SPR_TRAMWAY_BASE + back_offsets[offset];
+		spr_front = SPR_TRAMWAY_BASE + front_offsets[offset];
+	} else {
+		if (spr_back != 0) spr_back += 23 + offset;
+		if (spr_front != 0) spr_front += 23 + offset;
+	}
+}
+
+/**
  * Draws the road and trambits over an already drawn (lower end) of a bridge.
  * @param head_tile    bridge head tile with roadtype information
  * @param x            the x of the bridge
@@ -1128,11 +1152,8 @@ static void DrawBridgeRoadBits(TileIndex head_tile, int x, int y, int z, int off
 	bool trans_front[4] = { false };
 
 	static const SpriteID overlay_offsets[6] = {   0,   1,  11,  12,  13,  14 };
-	static const SpriteID back_offsets[6]    = {  95,  96,  99, 102, 100, 101 };
-	static const SpriteID front_offsets[6]   = {  97,  98, 103, 106, 104, 105 };
-
 	if (head || !IsInvisibilitySet(TO_BRIDGES)) {
-		/* Road underlay takes precendence over tram */
+		/* Road underlay takes precedence over tram */
 		trans_back[0] = !head && IsTransparencySet(TO_BRIDGES);
 		if (road_rti != nullptr) {
 			if (road_rti->UsesOverlay()) {
@@ -1166,29 +1187,13 @@ static void DrawBridgeRoadBits(TileIndex head_tile, int x, int y, int z, int off
 			}
 		}
 
-		/* Road catenary takes precendence over tram */
+		/* Road catenary takes precedence over tram */
 		trans_back[3] = IsTransparencySet(TO_CATENARY);
 		trans_front[0] = IsTransparencySet(TO_CATENARY);
 		if (road_rti != nullptr && HasRoadCatenaryDrawn(road_rt)) {
-			seq_back[3] = GetCustomRoadSprite(road_rti, head_tile, ROTSG_CATENARY_BACK, head ? TCX_NORMAL : TCX_ON_BRIDGE);
-			seq_front[0] = GetCustomRoadSprite(road_rti, head_tile, ROTSG_CATENARY_FRONT, head ? TCX_NORMAL : TCX_ON_BRIDGE);
-			if (seq_back[3] == 0 || seq_front[0] == 0) {
-				seq_back[3] = SPR_TRAMWAY_BASE + back_offsets[offset];
-				seq_front[0] = SPR_TRAMWAY_BASE + front_offsets[offset];
-			} else {
-				seq_back[3] += 23 + offset;
-				seq_front[0] += 23 + offset;
-			}
+			GetBridgeRoadCatenary(road_rti, head_tile, offset, head, seq_back[3], seq_front[0]);
 		} else if (tram_rti != nullptr && HasRoadCatenaryDrawn(tram_rt)) {
-			seq_back[3] = GetCustomRoadSprite(tram_rti, head_tile, ROTSG_CATENARY_BACK, head ? TCX_NORMAL : TCX_ON_BRIDGE);
-			seq_front[0] = GetCustomRoadSprite(tram_rti, head_tile, ROTSG_CATENARY_FRONT, head ? TCX_NORMAL : TCX_ON_BRIDGE);
-			if (seq_back[3] == 0 || seq_front[0] == 0) {
-				seq_back[3] = SPR_TRAMWAY_BASE + back_offsets[offset];
-				seq_front[0] = SPR_TRAMWAY_BASE + front_offsets[offset];
-			} else {
-				seq_back[3] += 23 + offset;
-				seq_front[0] += 23 + offset;
-			}
+			GetBridgeRoadCatenary(tram_rti, head_tile, offset, head, seq_back[3], seq_front[0]);
 		}
 	}
 
@@ -1289,7 +1294,7 @@ static void DrawTile_TunnelBridge(TileInfo *ti)
 
 			DrawRoadOverlays(ti, PAL_NONE, road_rti, tram_rti, sprite_offset, sprite_offset);
 
-			/* Road catenary takes precendence over tram */
+			/* Road catenary takes precedence over tram */
 			SpriteID catenary_sprite_base = 0;
 			if (road_rti != nullptr && HasRoadCatenaryDrawn(road_rt)) {
 				catenary_sprite_base = GetCustomRoadSprite(road_rti, ti->tile, ROTSG_CATENARY_FRONT);

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -46,7 +44,7 @@ public:
 /** Factory for the SSE4 32 bpp blitter (with palette animation). */
 class FBlitter_32bppSSE4_Anim: public BlitterFactory {
 public:
-	FBlitter_32bppSSE4_Anim() : BlitterFactory("32bpp-sse4-anim", "SSE4 Blitter (palette animation)", HasCPUIDFlag(1, 2, 19)) {}
+	FBlitter_32bppSSE4_Anim() : BlitterFactory("32bpp-sse4-anim", "32bpp SSE4 Blitter (palette animation)", HasCPUIDFlag(1, 2, 19)) {}
 	Blitter *CreateInstance() override { return new Blitter_32bppSSE4_Anim(); }
 };
 

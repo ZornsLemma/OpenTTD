@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -129,6 +127,7 @@ static const NIVariable _niv_stations[] = {
 	NIV(0x67, "land info of nearby tiles"),
 	NIV(0x68, "station info of nearby tiles"),
 	NIV(0x69, "information about cargo accepted in the past"),
+	NIV(0x6A, "GRFID of nearby station tiles"),
 	NIV_END()
 };
 

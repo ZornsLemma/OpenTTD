@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -228,7 +226,7 @@ CommandCost CmdChangeBankBalance(TileIndex tile, DoCommandFlag flags, uint32 p1,
 		cur_company.Restore();
 	}
 
-	/* This command doesn't cost anyting for deity. */
+	/* This command doesn't cost anything for deity. */
 	CommandCost zero_cost(expenses_type, 0);
 	return zero_cost;
 }

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -156,6 +154,144 @@ void GfxFillRect(int left, int top, int right, int bottom, int colour, FillRectM
 	}
 }
 
+typedef std::pair<Point, Point> LineSegment;
+
+/**
+ * Make line segments from a polygon defined by points, translated by an offset.
+ * Entirely horizontal lines (start and end at same Y coordinate) are skipped, as they are irrelevant to scanline conversion algorithms.
+ * Generated line segments always have the lowest Y coordinate point first, i.e. original direction is lost.
+ * @param shape The polygon to convert.
+ * @param offset Offset vector subtracted from all coordinates in the shape.
+ * @return Vector of undirected line segments.
+ */
+static std::vector<LineSegment> MakePolygonSegments(const std::vector<Point> &shape, Point offset)
+{
+	std::vector<LineSegment> segments;
+	if (shape.size() < 3) return segments; // fewer than 3 will always result in an empty polygon
+	segments.reserve(shape.size());
+
+	/* Connect first and last point by having initial previous point be the last */
+	Point prev = shape.back();
+	prev.x -= offset.x;
+	prev.y -= offset.y;
+	for (Point pt : shape) {
+		pt.x -= offset.x;
+		pt.y -= offset.y;
+		/* Create segments for all non-horizontal lines in the polygon.
+		 * The segments always have lowest Y coordinate first. */
+		if (prev.y > pt.y) {
+			segments.emplace_back(pt, prev);
+		} else if (prev.y < pt.y) {
+			segments.emplace_back(prev, pt);
+		}
+		prev = pt;
+	}
+
+	return segments;
+}
+
+/**
+ * Fill a polygon with colour.
+ * The odd-even winding rule is used, i.e. self-intersecting polygons will have holes in them.
+ * Left and top edges are inclusive, right and bottom edges are exclusive.
+ * @note For rectangles the GfxFillRect function will be faster.
+ * @pre dpi->zoom == ZOOM_LVL_NORMAL
+ * @param shape List of points on the polygon.
+ * @param colour An 8 bit palette index (FILLRECT_OPAQUE and FILLRECT_CHECKER) or a recolour spritenumber (FILLRECT_RECOLOUR).
+ * @param mode
+ *         FILLRECT_OPAQUE:   Fill the polygon with the specified colour.
+ *         FILLRECT_CHECKER:  Fill every other pixel with the specified colour, in a checkerboard pattern.
+ *         FILLRECT_RECOLOUR: Apply a recolour sprite to every pixel in the polygon.
+ */
+void GfxFillPolygon(const std::vector<Point> &shape, int colour, FillRectMode mode)
+{
+	Blitter *blitter = BlitterFactory::GetCurrentBlitter();
+	const DrawPixelInfo *dpi = _cur_dpi;
+	if (dpi->zoom != ZOOM_LVL_NORMAL) return;
+
+	std::vector<LineSegment> segments = MakePolygonSegments(shape, Point{ dpi->left, dpi->top });
+
+	/* Remove segments appearing entirely above or below the clipping area. */
+	segments.erase(std::remove_if(segments.begin(), segments.end(), [dpi](const LineSegment &s) { return s.second.y <= 0 || s.first.y >= dpi->height; }), segments.end());
+
+	/* Check that this wasn't an empty shape (all points on a horizontal line or outside clipping.) */
+	if (segments.empty()) return;
+
+	/* Sort the segments by first point Y coordinate. */
+	std::sort(segments.begin(), segments.end(), [](const LineSegment &a, const LineSegment &b) { return a.first.y < b.first.y; });
+
+	/* Segments intersecting current scanline. */
+	std::vector<LineSegment> active;
+	/* Intersection points with a scanline.
+	 * Kept outside loop to avoid repeated re-allocations. */
+	std::vector<int> intersections;
+	/* Normal, reasonable polygons don't have many intersections per scanline. */
+	active.reserve(4);
+	intersections.reserve(4);
+
+	/* Scan through the segments and paint each scanline. */
+	int y = segments.front().first.y;
+	std::vector<LineSegment>::iterator nextseg = segments.begin();
+	while (!active.empty() || nextseg != segments.end()) {
+		/* Clean up segments that have ended. */
+		active.erase(std::remove_if(active.begin(), active.end(), [y](const LineSegment &s) { return s.second.y == y; }), active.end());
+
+		/* Activate all segments starting on this scanline. */
+		while (nextseg != segments.end() && nextseg->first.y == y) {
+			active.push_back(*nextseg);
+			++nextseg;
+		}
+
+		/* Check clipping. */
+		if (y < 0) {
+			++y;
+			continue;
+		}
+		if (y >= dpi->height) return;
+
+		/*  Intersect scanline with all active segments. */
+		intersections.clear();
+		for (const LineSegment &s : active) {
+			const int sdx = s.second.x - s.first.x;
+			const int sdy = s.second.y - s.first.y;
+			const int ldy = y - s.first.y;
+			const int x = s.first.x + sdx * ldy / sdy;
+			intersections.push_back(x);
+		}
+
+		/* Fill between pairs of intersections. */
+		std::sort(intersections.begin(), intersections.end());
+		for (size_t i = 1; i < intersections.size(); i += 2) {
+			/* Check clipping. */
+			const int x1 = max(0, intersections[i - 1]);
+			const int x2 = min(intersections[i], dpi->width);
+			if (x2 < 0) continue;
+			if (x1 >= dpi->width) continue;
+
+			/* Fill line y from x1 to x2. */
+			void *dst = blitter->MoveTo(dpi->dst_ptr, x1, y);
+			switch (mode) {
+				default: // FILLRECT_OPAQUE
+					blitter->DrawRect(dst, x2 - x1, 1, (uint8)colour);
+					break;
+				case FILLRECT_RECOLOUR:
+					blitter->DrawColourMappingRect(dst, x2 - x1, 1, GB(colour, 0, PALETTE_WIDTH));
+					break;
+				case FILLRECT_CHECKER:
+					/* Fill every other pixel, offset such that the sum of filled pixels' X and Y coordinates is odd.
+					 * This creates a checkerboard effect. */
+					for (int x = (x1 + y) & 1; x < x2 - x1; x += 2) {
+						blitter->SetPixel(dst, x, 0, (uint8)colour);
+					}
+					break;
+			}
+		}
+
+		/* Next line */
+		++y;
+	}
+}
+
 /**
  * Check line clipping by using a linear equation and draw the visible part of
  * the line given by x/y and x2/y2.
@@ -212,7 +348,7 @@ static inline void GfxDoDrawLine(void *video, int x, int y, int x2, int y2, int 
 	 * work the blitter has to do by shortening the effective line segment.
 	 * However, in order to get that right and prevent the flickering effects
 	 * of rounding errors so much additional code has to be run here that in
-	 * the general case the effect is not noticable. */
+	 * the general case the effect is not noticeable. */
 
 	blitter->DrawLine(video, x, y, x2, y2, screen_width, screen_height, colour, width, dash);
 }
@@ -318,7 +454,7 @@ static void SetColourRemap(TextColour colour)
 	 * would be invisible at best, but it actually makes it illegible. */
 	bool no_shade   = (colour & TC_NO_SHADE) != 0 || colour == TC_BLACK;
 	bool raw_colour = (colour & TC_IS_PALETTE_COLOUR) != 0;
-	colour &= ~(TC_NO_SHADE | TC_IS_PALETTE_COLOUR);
+	colour &= ~(TC_NO_SHADE | TC_IS_PALETTE_COLOUR | TC_FORCED);
 
 	_string_colourremap[1] = raw_colour ? (byte)colour : _string_colourmap[colour];
 	_string_colourremap[2] = no_shade ? 0 : 1;
@@ -487,7 +623,8 @@ static int DrawLayoutLine(const ParagraphLayouter::Line &line, int y, int left, 
  * @param right  The right most position to draw on.
  * @param top    The top most position to draw on.
  * @param str    String to draw.
- * @param colour Colour used for drawing the string, see DoDrawString() for details
+ * @param colour Colour used for drawing the string, for details see _string_colourmap in
+ *               table/palettes.h or docs/ottd-colourtext-palette.png or the enum TextColour in gfx_type.h
  * @param align  The alignment of the string when drawing left-to-right. In the
  *               case a right-to-left language is chosen this is inverted so it
  *               will be drawn in the right direction.
@@ -522,7 +659,8 @@ int DrawString(int left, int right, int top, const char *str, TextColour colour,
  * @param right  The right most position to draw on.
  * @param top    The top most position to draw on.
  * @param str    String to draw.
- * @param colour Colour used for drawing the string, see DoDrawString() for details
+ * @param colour Colour used for drawing the string, for details see _string_colourmap in
+ *               table/palettes.h or docs/ottd-colourtext-palette.png or the enum TextColour in gfx_type.h
  * @param align  The alignment of the string when drawing left-to-right. In the
  *               case a right-to-left language is chosen this is inverted so it
  *               will be drawn in the right direction.
@@ -610,7 +748,8 @@ Dimension GetStringMultiLineBoundingBox(const char *str, const Dimension &sugges
  * @param top    The top most position to draw on.
  * @param bottom The bottom most position to draw on.
  * @param str    String to draw.
- * @param colour Colour used for drawing the string, see DoDrawString() for details
+ * @param colour Colour used for drawing the string, for details see _string_colourmap in
+ *               table/palettes.h or docs/ottd-colourtext-palette.png or the enum TextColour in gfx_type.h
  * @param align  The horizontal and vertical alignment of the string.
  * @param underline Whether to underline all strings
  * @param fontsize The size of the initial characters.
@@ -671,7 +810,8 @@ int DrawStringMultiLine(int left, int right, int top, int bottom, const char *st
  * @param top    The top most position to draw on.
  * @param bottom The bottom most position to draw on.
  * @param str    String to draw.
- * @param colour Colour used for drawing the string, see DoDrawString() for details
+ * @param colour Colour used for drawing the string, for details see _string_colourmap in
+ *               table/palettes.h or docs/ottd-colourtext-palette.png or the enum TextColour in gfx_type.h
  * @param align  The horizontal and vertical alignment of the string.
  * @param underline Whether to underline all strings
  * @param fontsize The size of the initial characters.
@@ -749,7 +889,8 @@ const char *GetCharAtPosition(const char *str, int x, FontSize start_fontsize)
  * @param c           Character (glyph) to draw
  * @param x           X position to draw character
  * @param y           Y position to draw character
- * @param colour      Colour to use, see DoDrawString() for details
+ * @param colour      Colour to use, for details see _string_colourmap in
+ *                    table/palettes.h or docs/ottd-colourtext-palette.png or the enum TextColour in gfx_type.h
  */
 void DrawCharCentered(WChar c, int x, int y, TextColour colour)
 {
@@ -1669,7 +1810,7 @@ bool CursorVars::UpdateCursorPosition(int x, int y, bool queued_warp)
 		if (this->delta.x != 0 || this->delta.y != 0) {
 			/* Trigger warp.
 			 * Note: We also trigger warping again, if there is already a pending warp.
-			 *       This makes it more tolerant about the OS or other software inbetween
+			 *       This makes it more tolerant about the OS or other software in between
 			 *       botchering the warp. */
 			this->queued_warp = queued_warp;
 			need_warp = true;

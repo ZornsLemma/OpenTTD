@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -512,7 +510,7 @@ std::unique_ptr<const ParagraphLayouter::Line> FallbackParagraphLayout::NextLine
 		/* Only a newline. */
 		this->buffer = nullptr;
 		l->emplace_back(this->runs.front().second, this->buffer, 0, 0);
-		return std::move(l); // Not supposed to be needed, but clang-3.8 barfs otherwise.
+		return l;
 	}
 
 	int offset = this->buffer - this->buffer_begin;
@@ -562,7 +560,7 @@ std::unique_ptr<const ParagraphLayouter::Line> FallbackParagraphLayout::NextLine
 					/* The character is wider than allowed width; don't know
 					 * what to do with this case... bail out! */
 					this->buffer = nullptr;
-					return std::move(l); // Not supposed to be needed, but clang-3.8 barfs otherwise.
+					return l;
 				}
 
 				if (last_space == nullptr) {
@@ -589,7 +587,7 @@ std::unique_ptr<const ParagraphLayouter::Line> FallbackParagraphLayout::NextLine
 		int w = l->GetWidth();
 		l->emplace_back(iter->second, begin, last_char - begin, w);
 	}
-	return std::move(l); // Not supposed to be needed, but clang-3.8 barfs otherwise.
+	return l;
 }
 
 /**
@@ -633,6 +631,8 @@ static inline void GetLayouter(Layouter::LineCacheItem &line, const char *&str, 
 		} else if (c >= SCC_FIRST_FONT && c <= SCC_LAST_FONT) {
 			state.SetFontSize((FontSize)(c - SCC_FIRST_FONT));
 		} else {
+			/* Filter out non printable characters */
+			if (!IsPrintable(c)) continue;
 			/* Filter out text direction characters that shouldn't be drawn, and
 			 * will not be handled in the fallback non ICU case because they are
 			 * mostly needed for RTL languages which need more ICU support. */

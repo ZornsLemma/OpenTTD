@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -529,10 +527,24 @@ FILE *FioFOpenFile(const char *filename, const char *mode, Subdirectory subdir, 
 
 /**
  * Create a directory with the given name
+ * If the parent directory does not exist, it will try to create that as well.
  * @param name the new name of the directory
  */
 void FioCreateDirectory(const char *name)
 {
+	char dirname[MAX_PATH];
+	strecpy(dirname, name, lastof(dirname));
+	char *p = strrchr(dirname, PATHSEPCHAR);
+	if (p != nullptr) {
+		*p = '\0';
+		DIR *dir = ttd_opendir(dirname);
+		if (dir == nullptr) {
+			FioCreateDirectory(dirname); // Try creating the parent directory, if we couldn't open it
+		} else {
+			closedir(dir);
+		}
+	}
+
 	/* Ignore directory creation errors; they'll surface later on, and most
 	 * of the time they are 'directory already exists' errors anyhow. */
 #if defined(_WIN32)
@@ -565,18 +577,6 @@ bool AppendPathSeparator(char *buf, const char *last)
 	return true;
 }
 
-/**
- * Find the first directory in a tar archive.
- * @param tarname the name of the tar archive to look in.
- * @param subdir  the subdirectory to look in.
- */
-const char *FioTarFirstDir(const char *tarname, Subdirectory subdir)
-{
-	TarList::iterator it = _tar_list[subdir].find(tarname);
-	if (it == _tar_list[subdir].end()) return nullptr;
-	return (*it).second.dirname;
-}
-
 static void TarAddLink(const std::string &srcParam, const std::string &destParam, Subdirectory subdir)
 {
 	std::string src = srcParam;
@@ -596,11 +596,6 @@ static void TarAddLink(const std::string &srcParam, const std::string &destParam
 		const std::string dst_path = (dest.length() == 0 ? "" : ((*dest.rbegin() == PATHSEPCHAR) ? dest : dest + PATHSEPCHAR));
 		_tar_linklist[subdir].insert(TarLinkList::value_type(src_path, dst_path));
 	}
-}
-
-void FioTarAddLink(const char *src, const char *dest, Subdirectory subdir)
-{
-	TarAddLink(src, dest, subdir);
 }
 
 /**

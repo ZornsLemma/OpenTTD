@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -106,6 +104,23 @@ static char *strecat(char *dst, const char *src, const char *last)
 
 	return strecpy(dst, src, last);
 }
+
+#if defined(__CYGWIN__)
+/**
+ * Version of strdup copied from glibc.
+ * Duplicate S, returning an identical malloc'd string.
+ * @param s The string to duplicate.
+ */
+char *
+strdup (const char *s)
+{
+	size_t len = strlen(s) + 1;
+	void *n = malloc(len);
+
+	if (n == NULL) return NULL;
+	return (char *) memcpy(n, s, len);
+}
+#endif
 
 /**
  * Version of the standard free that accepts const pointers.
@@ -292,7 +307,7 @@ public:
 	}
 
 	/**
-	 * Read the currenty processed string.
+	 * Read the currently processed string.
 	 * @return the string, can be nullptr.
 	 */
 	const char *GetString() const

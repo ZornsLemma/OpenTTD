@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -17,8 +15,6 @@
  *
  * \b 1.10.0
  *
- * This version is not yet released. The following changes are not set in stone yet.
- *
  * API additions:
  * \li AIGroup::SetPrimaryColour
  * \li AIGroup::SetSecondaryColour
@@ -34,6 +30,10 @@
  * \li AIEngine::CanRunOnRoad
  * \li AIEngine::HasPowerOnRoad
  * \li AIRoadTypeList::RoadTypeList
+ * \li AIEventVehicleAutoReplaced
+ *
+ * Other changes:
+ * \li AITile::DemolishTile works without a selected company
  *
  * \b 1.9.0
  *
@@ -310,7 +310,7 @@
  *     destination it its catchment area. One industry tile or one town house
  *     is enough as long as station accepts the cargo. Awarded subsidies are no
  *     longer bound to stations used for first delivery, any station can be
- *     used for loading and unloading as long as cargo is transfered from
+ *     used for loading and unloading as long as cargo is transferred from
  *     source to destination.
  * \li Make AIEngine:CanRefitCargo() not report refittability to mail by
  *     default for aircraft. It is not necessarily true. This means that even

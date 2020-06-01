@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -54,8 +52,7 @@ protected:
 		if (this->story_pages.NeedRebuild()) {
 			this->story_pages.clear();
 
-			const StoryPage *p;
-			FOR_ALL_STORY_PAGES(p) {
+			for (const StoryPage *p : StoryPage::Iterate()) {
 				if (this->IsPageAvailable(p)) {
 					this->story_pages.push_back(p);
 				}
@@ -82,8 +79,7 @@ protected:
 
 			const StoryPage *p = GetSelPage();
 			if (p != nullptr) {
-				const StoryPageElement *pe;
-				FOR_ALL_STORY_PAGE_ELEMENTS(pe) {
+				for (const StoryPageElement *pe : StoryPageElement::Iterate()) {
 					if (pe->page == p->index) {
 						this->story_page_elements.push_back(pe);
 					}
@@ -263,7 +259,7 @@ protected:
 	/**
 	 * Counts how many pixels of height that are used by Date and Title
 	 * (excluding marginal after Title, as each body element has
-	 * an empty row before the elment).
+	 * an empty row before the element).
 	 * @param max_width Available width to display content.
 	 * @return the height in pixels.
 	 */
@@ -412,7 +408,7 @@ public:
 		this->vscroll = this->GetScrollbar(WID_SB_SCROLLBAR);
 		this->vscroll->SetStepSize(FONT_HEIGHT_NORMAL);
 
-		/* Initalize page sort. */
+		/* Initialize page sort. */
 		this->story_pages.SetSortFuncs(StoryBookWindow::page_sorter_funcs);
 		this->story_pages.ForceRebuild();
 		this->BuildStoryPageList();

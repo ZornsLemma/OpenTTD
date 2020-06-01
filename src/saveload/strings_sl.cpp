@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -82,7 +80,7 @@ char *CopyFromOldName(StringID id)
 				case 0xB8: c = 0x017E; break; // z with caron
 				case 0xBC: c = 0x0152; break; // OE ligature
 				case 0xBD: c = 0x0153; break; // oe ligature
-				case 0xBE: c = 0x0178; break; // Y with diaresis
+				case 0xBE: c = 0x0178; break; // Y with diaeresis
 				default: break;
 			}
 

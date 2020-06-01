@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -18,6 +16,7 @@
 #include "vehicle_base.h"
 #include "vehicle_func.h"
 #include "vehicle_gui.h"
+#include "roadveh.h"
 #include "station_base.h"
 #include "industry.h"
 #include "town.h"
@@ -34,6 +33,7 @@
 #include "company_base.h"
 #include "settings_internal.h"
 #include "guitimer_func.h"
+#include "group_gui.h"
 
 #include "widgets/news_widget.h"
 
@@ -44,6 +44,7 @@
 const NewsItem *_statusbar_news_item = nullptr;
 
 static uint MIN_NEWS_AMOUNT = 30;        ///< preferred minimum amount of news messages
+static uint MAX_NEWS_AMOUNT = 1 << 10;   ///< Do not exceed this number of news messages
 static uint _total_news = 0;             ///< current number of news items
 static NewsItem *_oldest_news = nullptr; ///< head of news items queue
 NewsItem *_latest_news = nullptr;        ///< tail of news items queue
@@ -183,6 +184,8 @@ static const NWidgetPart _nested_small_news_widgets[] = {
 	NWidget(NWID_HORIZONTAL),
 		NWidget(WWT_CLOSEBOX, COLOUR_LIGHT_BLUE, WID_N_CLOSEBOX),
 		NWidget(WWT_EMPTY, COLOUR_LIGHT_BLUE, WID_N_CAPTION), SetFill(1, 0),
+		NWidget(WWT_TEXTBTN, COLOUR_LIGHT_BLUE, WID_N_SHOW_GROUP), SetMinimalSize(14, 11), SetResize(1, 0),
+				SetDataTip(STR_NULL /* filled in later */, STR_NEWS_SHOW_VEHICLE_GROUP_TOOLTIP),
 	EndContainer(),
 
 	/* Main part */
@@ -281,6 +284,27 @@ struct NewsWindow : Window {
 		/* For company news with a face we have a separate headline in param[0] */
 		if (desc == &_company_news_desc) this->GetWidget<NWidgetCore>(WID_N_TITLE)->widget_data = this->ni->params[0];
 
+		NWidgetCore *nwid = this->GetWidget<NWidgetCore>(WID_N_SHOW_GROUP);
+		if (ni->reftype1 == NR_VEHICLE && nwid != nullptr) {
+			const Vehicle *v = Vehicle::Get(ni->ref1);
+			switch (v->type) {
+				case VEH_TRAIN:
+					nwid->widget_data = STR_TRAIN;
+					break;
+				case VEH_ROAD:
+					nwid->widget_data = RoadVehicle::From(v)->IsBus() ? STR_BUS : STR_LORRY;
+					break;
+				case VEH_SHIP:
+					nwid->widget_data = STR_SHIP;
+					break;
+				case VEH_AIRCRAFT:
+					nwid->widget_data = STR_PLANE;
+					break;
+				default:
+					break; // Do nothing
+			}
+		}
+
 		this->FinishInitNested(0);
 
 		/* Initialize viewport if it exists. */
@@ -356,6 +380,24 @@ struct NewsWindow : Window {
 				str = GetEngineInfoString(engine);
 				break;
 			}
+
+			case WID_N_SHOW_GROUP:
+				if (this->ni->reftype1 == NR_VEHICLE) {
+					Dimension d2 = GetStringBoundingBox(this->GetWidget<NWidgetCore>(WID_N_SHOW_GROUP)->widget_data);
+					d2.height += WD_CAPTIONTEXT_TOP + WD_CAPTIONTEXT_BOTTOM;
+					d2.width += WD_CAPTIONTEXT_LEFT + WD_CAPTIONTEXT_RIGHT;
+					*size = d2;
+				} else {
+					/* Hide 'Show group window' button if this news is not about a vehicle. */
+					size->width = 0;
+					size->height = 0;
+					resize->width = 0;
+					resize->height = 0;
+					fill->width = 0;
+					fill->height = 0;
+				}
+				return;
+
 			default:
 				return; // Do nothing
 		}
@@ -451,6 +493,12 @@ struct NewsWindow : Window {
 			case WID_N_VIEWPORT:
 				break; // Ignore clicks
 
+			case WID_N_SHOW_GROUP:
+				if (this->ni->reftype1 == NR_VEHICLE) {
+					const Vehicle *v = Vehicle::Get(this->ni->ref1);
+					ShowCompanyGroupForVehicle(v);
+				}
+				break;
 			default:
 				if (this->ni->reftype1 == NR_VEHICLE) {
 					const Vehicle *v = Vehicle::Get(this->ni->ref1);
@@ -593,38 +641,46 @@ void InitNewsItemStructs()
 }
 
 /**
- * Are we ready to show another news item?
- * Only if nothing is in the newsticker and no newspaper is displayed
+ * Are we ready to show another ticker item?
+ * Only if nothing is in the newsticker is displayed
  */
-static bool ReadyForNextItem()
+static bool ReadyForNextTickerItem()
 {
-	const NewsItem *ni = _forced_news == nullptr ? _current_news : _forced_news;
+	const NewsItem *ni = _statusbar_news_item;
 	if (ni == nullptr) return true;
 
 	/* Ticker message
 	 * Check if the status bar message is still being displayed? */
 	if (IsNewsTickerShown()) return false;
+	return true;
+}
+
+/**
+ * Are we ready to show another news item?
+ * Only if no newspaper is displayed
+ */
+static bool ReadyForNextNewsItem()
+{
+	const NewsItem *ni = _forced_news == nullptr ? _current_news : _forced_news;
+	if (ni == nullptr) return true;
 
 	/* neither newsticker nor newspaper are running */
 	return (NewsWindow::duration <= 0 || FindWindowById(WC_NEWS_WINDOW, 0) == nullptr);
 }
 
-/** Move to the next news item */
-static void MoveToNextItem()
+/** Move to the next ticker item */
+static void MoveToNextTickerItem()
 {
 	InvalidateWindowData(WC_STATUS_BAR, 0, SBI_NEWS_DELETED); // invalidate the statusbar
-	DeleteWindowById(WC_NEWS_WINDOW, 0); // close the newspapers window if shown
-	_forced_news = nullptr;
-	_statusbar_news_item = nullptr;
 
 	/* if we're not at the last item, then move on */
-	if (_current_news != _latest_news) {
-		_current_news = (_current_news == nullptr) ? _oldest_news : _current_news->next;
-		const NewsItem *ni = _current_news;
+	while (_statusbar_news_item != _latest_news) {
+		_statusbar_news_item = (_statusbar_news_item == nullptr) ? _oldest_news : _statusbar_news_item->next;
+		const NewsItem *ni = _statusbar_news_item;
 		const NewsType type = ni->type;
 
 		/* check the date, don't show too old items */
-		if (_date - _news_type_data[type].age > ni->date) return;
+		if (_date - _news_type_data[type].age > ni->date) continue;
 
 		switch (_news_type_data[type].GetDisplay()) {
 			default: NOT_REACHED();
@@ -636,11 +692,86 @@ static void MoveToNextItem()
 				ShowTicker(ni);
 				break;
 
+			case ND_FULL: // Full - show newspaper, skipped here
+				continue;
+		}
+		return;
+	}
+}
+
+/** Move to the next news item */
+static void MoveToNextNewsItem()
+{
+	DeleteWindowById(WC_NEWS_WINDOW, 0); // close the newspapers window if shown
+	_forced_news = nullptr;
+
+	/* if we're not at the last item, then move on */
+	while (_current_news != _latest_news) {
+		_current_news = (_current_news == nullptr) ? _oldest_news : _current_news->next;
+		const NewsItem *ni = _current_news;
+		const NewsType type = ni->type;
+
+		/* check the date, don't show too old items */
+		if (_date - _news_type_data[type].age > ni->date) continue;
+
+		switch (_news_type_data[type].GetDisplay()) {
+			default: NOT_REACHED();
+			case ND_OFF: // Off - show nothing only a small reminder in the status bar, skipped here
+				continue;
+
+			case ND_SUMMARY: // Summary - show ticker, skipped here
+				continue;
+
 			case ND_FULL: // Full - show newspaper
 				ShowNewspaper(ni);
 				break;
 		}
+		return;
 	}
+}
+
+/** Delete a news item from the queue */
+static void DeleteNewsItem(NewsItem *ni)
+{
+	/* Delete the news from the news queue. */
+	if (ni->prev != nullptr) {
+		ni->prev->next = ni->next;
+	} else {
+		assert(_oldest_news == ni);
+		_oldest_news = ni->next;
+	}
+
+	if (ni->next != nullptr) {
+		ni->next->prev = ni->prev;
+	} else {
+		assert(_latest_news == ni);
+		_latest_news = ni->prev;
+	}
+
+	_total_news--;
+
+	if (_forced_news == ni || _current_news == ni) {
+		/* When we're the current news, go to the previous item first;
+		 * we just possibly made that the last news item. */
+		if (_current_news == ni) _current_news = ni->prev;
+
+		/* About to remove the currently forced item (shown as newspapers) ||
+		 * about to remove the currently displayed item (newspapers) */
+		MoveToNextNewsItem();
+	}
+
+	if (_statusbar_news_item == ni) {
+		/* When we're the current news, go to the previous item first;
+		 * we just possibly made that the last news item. */
+		_statusbar_news_item = ni->prev;
+
+		/* About to remove the currently displayed item (ticker, or just a reminder) */
+		MoveToNextTickerItem();
+	}
+
+	delete ni;
+
+	SetWindowDirty(WC_MESSAGE_HISTORY, 0);
 }
 
 /**
@@ -649,9 +780,9 @@ static void MoveToNextItem()
  * @param type news category
  * @param flags display flags for the news
  * @param reftype1 Type of ref1
- * @param ref1     Reference 1 to some object: Used for a possible viewport, scrolling after clicking on the news, and for deleteing the news when the object is deleted.
+ * @param ref1     Reference 1 to some object: Used for a possible viewport, scrolling after clicking on the news, and for deleting the news when the object is deleted.
  * @param reftype2 Type of ref2
- * @param ref2     Reference 2 to some object: Used for scrolling after clicking on the news, and for deleteing the news when the object is deleted.
+ * @param ref2     Reference 2 to some object: Used for scrolling after clicking on the news, and for deleting the news when the object is deleted.
  * @param free_data Pointer to data that must be freed once the news message is cleared
  *
  * @see NewsSubtype
@@ -690,6 +821,11 @@ void AddNewsItem(StringID string, NewsType type, NewsFlag flags, NewsReferenceTy
 
 	ni->next = nullptr;
 	_latest_news = ni;
+
+	/* Keep the number of stored news items to a managable number */
+	if (_total_news > MAX_NEWS_AMOUNT) {
+		DeleteNewsItem(_oldest_news);
+	}
 
 	SetWindowDirty(WC_MESSAGE_HISTORY, 0);
 }
@@ -756,41 +892,6 @@ CommandCost CmdCustomNewsItem(TileIndex tile, DoCommandFlag flags, uint32 p1, ui
 	}
 
 	return CommandCost();
-}
-
-/** Delete a news item from the queue */
-static void DeleteNewsItem(NewsItem *ni)
-{
-	/* Delete the news from the news queue. */
-	if (ni->prev != nullptr) {
-		ni->prev->next = ni->next;
-	} else {
-		assert(_oldest_news == ni);
-		_oldest_news = ni->next;
-	}
-
-	if (ni->next != nullptr) {
-		ni->next->prev = ni->prev;
-	} else {
-		assert(_latest_news == ni);
-		_latest_news = ni->prev;
-	}
-
-	_total_news--;
-
-	if (_forced_news == ni || _current_news == ni || _statusbar_news_item == ni) {
-		/* When we're the current news, go to the previous item first;
-		 * we just possibly made that the last news item. */
-		if (_current_news == ni) _current_news = ni->prev;
-
-		/* About to remove the currently forced item (shown as newspapers) ||
-		 * about to remove the currently displayed item (newspapers, ticker, or just a reminder) */
-		MoveToNextItem();
-	}
-
-	delete ni;
-
-	SetWindowDirty(WC_MESSAGE_HISTORY, 0);
 }
 
 /**
@@ -906,7 +1007,8 @@ void NewsLoop()
 		_last_clean_month = _cur_month;
 	}
 
-	if (ReadyForNextItem()) MoveToNextItem();
+	if (ReadyForNextTickerItem()) MoveToNextTickerItem();
+	if (ReadyForNextNewsItem()) MoveToNextNewsItem();
 }
 
 /** Do a forced show of a specific message */

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -421,7 +419,7 @@ void ShowOnScreenKeyboard(Window *parent, int button)
  * Updates the original text of the OSK so when the 'parent' changes the
  * original and you press on cancel you won't get the 'old' original text
  * but the updated one.
- * @param parent window that just updated its orignal text
+ * @param parent window that just updated its original text
  * @param button widget number of parent's textbox to update
  */
 void UpdateOSKOriginalText(const Window *parent, int button)

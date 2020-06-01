@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -263,7 +261,7 @@ static int ScriptOrderPositionToRealOrderPosition(VehicleID vehicle_id, ScriptOr
 				}
 			} else if (st->ship_station.tile != INVALID_TILE) {
 				TILE_AREA_LOOP(t, st->ship_station) {
-					if (IsDockTile(t) && GetStationIndex(t) == st->index) return t;
+					if (IsTileType(t, MP_STATION) && (IsDock(t) || IsOilRig(t)) && GetStationIndex(t) == st->index) return t;
 				}
 			} else if (st->bus_stops != nullptr) {
 				return st->bus_stops->xy;
@@ -669,8 +667,14 @@ static void _DoCommandReturnSetOrderFlags(class ScriptInstance *instance)
 /* static */ uint ScriptOrder::GetOrderDistance(ScriptVehicle::VehicleType vehicle_type, TileIndex origin_tile, TileIndex dest_tile)
 {
 	if (vehicle_type == ScriptVehicle::VT_AIR) {
-		if (ScriptTile::IsStationTile(origin_tile) && ::Station::GetByTile(origin_tile)->airport.tile != INVALID_TILE) origin_tile = ::Station::GetByTile(origin_tile)->airport.tile;
-		if (ScriptTile::IsStationTile(dest_tile) && ::Station::GetByTile(dest_tile)->airport.tile != INVALID_TILE) dest_tile = ::Station::GetByTile(dest_tile)->airport.tile;
+		if (ScriptTile::IsStationTile(origin_tile)) {
+			Station *orig_station = ::Station::GetByTile(origin_tile);
+			if (orig_station != nullptr && orig_station->airport.tile != INVALID_TILE) origin_tile = orig_station->airport.tile;
+		}
+		if (ScriptTile::IsStationTile(dest_tile)) {
+			Station *dest_station = ::Station::GetByTile(dest_tile);
+			if (dest_station != nullptr && dest_station->airport.tile != INVALID_TILE) dest_tile = dest_station->airport.tile;
+		}
 
 		return ScriptMap::DistanceSquare(origin_tile, dest_tile);
 	} else {

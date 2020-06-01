@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -23,7 +21,7 @@
  * @param[out] h The lowest height of the four corners.
  * @return The slope.
  */
-static Slope GetTileSlopeGivenHeight(int hnorth, int hwest, int heast, int hsouth, int *h)
+Slope GetTileSlopeGivenHeight(int hnorth, int hwest, int heast, int hsouth, int *h)
 {
 	/* Due to the fact that tiles must connect with each other without leaving gaps, the
 	 * biggest difference in height between any corner and 'min' is between 0, 1, or 2.
@@ -76,8 +74,8 @@ Slope GetTileSlope(TileIndex tile, int *h)
 /**
  * Return the slope of a given tile, also for tiles outside the map (virtual "black" tiles).
  *
- * @param x X coordinate of the tile to compute slope of, may be ouside the map.
- * @param y Y coordinate of the tile to compute slope of, may be ouside the map.
+ * @param x X coordinate of the tile to compute slope of, may be outside the map.
+ * @param y Y coordinate of the tile to compute slope of, may be outside the map.
  * @param h If not \c nullptr, pointer to storage of z height.
  * @return Slope of the tile, except for the HALFTILE part.
  */

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -64,8 +62,6 @@ bool AppendPathSeparator(char *buf, const char *last);
 void DeterminePaths(const char *exe);
 void *ReadFileToMem(const char *filename, size_t *lenp, size_t maxsize);
 bool FileExists(const char *filename);
-const char *FioTarFirstDir(const char *tarname, Subdirectory subdir);
-void FioTarAddLink(const char *src, const char *dest, Subdirectory subdir);
 bool ExtractTar(const char *tar_filename, Subdirectory subdir);
 
 extern const char *_personal_dir; ///< custom directory for personal settings, saves, newgrf, etc.

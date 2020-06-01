@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -289,7 +287,7 @@ struct ContentListFilterData {
 	std::bitset<CONTENT_TYPE_END> types; ///< Content types displayed
 };
 
-/** Filter criterias for NetworkContentListWindow. */
+/** Filter criteria for NetworkContentListWindow. */
 enum ContentListFilterCriteria {
 	CONTENT_FILTER_TEXT = 0,        ///< Filter by query sting
 	CONTENT_FILTER_TYPE_OR_SELECTED,///< Filter by being of displayed type or selected for download

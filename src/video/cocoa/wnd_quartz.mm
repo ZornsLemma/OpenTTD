@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -104,35 +102,6 @@ public:
 	void SetPortAlphaOpaque();
 	bool WindowResized();
 };
-
-
-static CGColorSpaceRef QZ_GetCorrectColorSpace()
-{
-	static CGColorSpaceRef colorSpace = NULL;
-
-	if (colorSpace == NULL) {
-#if (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_5)
-		if (MacOSVersionIsAtLeast(10, 5, 0)) {
-			colorSpace = CGDisplayCopyColorSpace(CGMainDisplayID());
-		} else
-#endif
-		{
-#if (MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_5) && !defined(HAVE_OSX_1011_SDK)
-			CMProfileRef sysProfile;
-			if (CMGetSystemProfile(&sysProfile) == noErr) {
-				colorSpace = CGColorSpaceCreateWithPlatformColorSpace(sysProfile);
-				CMCloseProfile(sysProfile);
-			}
-#endif
-		}
-
-		if (colorSpace == NULL) colorSpace = CGColorSpaceCreateDeviceRGB();
-
-		if (colorSpace == NULL) error("Could not get system colour space. You might need to recalibrate your monitor.");
-	}
-
-	return colorSpace;
-}
 
 
 @implementation OTTD_QuartzView
@@ -377,6 +346,9 @@ bool WindowQuartzSubdriver::SetVideoMode(int width, int height, int bpp)
 		[ this->window makeKeyAndOrderFront:nil ];
 	}
 
+	[this->window setColorSpace:[NSColorSpace sRGBColorSpace]];
+	this->color_space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+
 	bool ret = WindowResized();
 	this->UpdatePalette(0, 256);
 
@@ -426,6 +398,7 @@ WindowQuartzSubdriver::~WindowQuartzSubdriver()
 
 	CGContextRelease(this->cgcontext);
 
+	CGColorSpaceRelease(this->color_space);
 	free(this->window_buffer);
 	free(this->pixel_buffer);
 }
@@ -602,12 +575,12 @@ bool WindowQuartzSubdriver::WindowResized()
 
 	CGContextRelease(this->cgcontext);
 	this->cgcontext = CGBitmapContextCreate(
-		this->window_buffer,        // data
+		this->window_buffer,       // data
 		this->window_width,        // width
 		this->window_height,       // height
 		8,                         // bits per component
 		this->window_width * 4,    // bytes per row
-		QZ_GetCorrectColorSpace(), // color space
+		this->color_space,         // color space
 		kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Host
 	);
 

@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -182,8 +180,10 @@ public:
 	 * @param tile The tile on which the command was executed.
 	 * @param p1 p1 as given to DoCommandPInternal.
 	 * @param p2 p2 as given to DoCommandPInternal.
+	 * @param cmd cmd as given to DoCommandPInternal.
+	 * @return true if we handled result.
 	 */
-	void DoCommandCallback(const CommandCost &result, TileIndex tile, uint32 p1, uint32 p2);
+	bool DoCommandCallback(const CommandCost &result, TileIndex tile, uint32 p1, uint32 p2, uint32 cmd);
 
 	/**
 	 * Insert an event for this script.

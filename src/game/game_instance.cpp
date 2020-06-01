@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -257,11 +255,13 @@ void GameInstance::Died()
  * @param tile The tile on which the command was executed.
  * @param p1 p1 as given to DoCommandPInternal.
  * @param p2 p2 as given to DoCommandPInternal.
+ * @param cmd cmd as given to DoCommandPInternal.
  */
-void CcGame(const CommandCost &result, TileIndex tile, uint32 p1, uint32 p2)
+void CcGame(const CommandCost &result, TileIndex tile, uint32 p1, uint32 p2, uint32 cmd)
 {
-	Game::GetGameInstance()->DoCommandCallback(result, tile, p1, p2);
-	Game::GetGameInstance()->Continue();
+	if (Game::GetGameInstance()->DoCommandCallback(result, tile, p1, p2, cmd)) {
+		Game::GetGameInstance()->Continue();
+	}
 }
 
 CommandCallback *GameInstance::GetDoCommandCallback()

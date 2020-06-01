@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -28,7 +26,7 @@ static void DrawTile_Void(TileInfo *ti)
 
 static int GetSlopePixelZ_Void(TileIndex tile, uint x, uint y)
 {
-	/* This function may be called on tiles outside the map, don't asssume
+	/* This function may be called on tiles outside the map, don't assume
 	 * that 'tile' is a valid tile index. See GetSlopePixelZOutsideMap. */
 	int z;
 	Slope tileh = GetTilePixelSlopeOutsideMap(x >> 4, y >> 4, &z);

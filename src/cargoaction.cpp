@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -162,7 +160,7 @@ bool CargoReturn::operator()(CargoPacket *cp)
 
 /**
  * Transfers some cargo from a vehicle to a station.
- * @param cp Packet to be transfered.
+ * @param cp Packet to be transferred.
  * @return True if the packet was completely reserved, false if part of it was.
  */
 bool CargoTransfer::operator()(CargoPacket *cp)

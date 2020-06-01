@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -978,7 +976,7 @@ static void LoadWin32Font(FontSize fs)
 
 		if (AddFontResourceEx(fontPath, FR_PRIVATE, 0) != 0) {
 			/* Try a nice little undocumented function first for getting the internal font name.
-			 * Some documentation is fount at: http://www.undocprint.org/winspool/getfontresourceinfo */
+			 * Some documentation is found at: http://www.undocprint.org/winspool/getfontresourceinfo */
 			typedef BOOL(WINAPI * PFNGETFONTRESOURCEINFO)(LPCTSTR, LPDWORD, LPVOID, DWORD);
 #ifdef UNICODE
 			static PFNGETFONTRESOURCEINFO GetFontResourceInfo = (PFNGETFONTRESOURCEINFO)GetProcAddress(GetModuleHandle(_T("Gdi32")), "GetFontResourceInfoW");

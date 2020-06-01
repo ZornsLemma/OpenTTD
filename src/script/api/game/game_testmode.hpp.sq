@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -19,7 +17,6 @@ void SQGSTestMode_Register(Squirrel *engine)
 {
 	DefSQClass<ScriptTestMode, ST_GS> SQGSTestMode("GSTestMode");
 	SQGSTestMode.PreRegister(engine);
-	SQGSTestMode.AddConstructor<void (ScriptTestMode::*)(), 1>(engine, "x");
 
 	SQGSTestMode.PostRegister(engine);
 }

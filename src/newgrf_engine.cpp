@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -248,7 +246,7 @@ static byte MapAircraftMovementState(const Aircraft *v)
 			return AMS_TTDP_TO_INWAY;
 
 		case HELILANDING:
-		case HELIENDLANDING: // Helicoptor is decending.
+		case HELIENDLANDING: // Helicoptor is descending.
 			if (amdflag & AMED_HELI_LOWER) {
 				return afc->delta_z == 0 ?
 					AMS_TTDP_HELI_LAND_AIRPORT : AMS_TTDP_HELI_LAND_HELIPORT;
@@ -948,6 +946,22 @@ static uint32 VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *object,
 	return in_motion ? group->loaded[set] : group->loading[set];
 }
 
+GrfSpecFeature VehicleResolverObject::GetFeature() const
+{
+	switch (Engine::Get(this->self_scope.self_type)->type) {
+		case VEH_TRAIN: return GSF_TRAINS;
+		case VEH_ROAD: return GSF_ROADVEHICLES;
+		case VEH_SHIP: return GSF_SHIPS;
+		case VEH_AIRCRAFT: return GSF_AIRCRAFT;
+		default: return GSF_INVALID;
+	}
+}
+
+uint32 VehicleResolverObject::GetDebugID() const
+{
+	return Engine::Get(this->self_scope.self_type)->grf_prop.local_id;
+}
+
 /**
  * Get the grf file associated with an engine type.
  * @param engine_type Engine to query.
@@ -1072,7 +1086,7 @@ bool UsesWagonOverride(const Vehicle *v)
  * @param param1   First parameter of the callback
  * @param param2   Second parameter of the callback
  * @param engine   Engine type of the vehicle to evaluate the callback for
- * @param v        The vehicle to evaluate the callback for, or nullptr if it doesnt exist yet
+ * @param v        The vehicle to evaluate the callback for, or nullptr if it doesn't exist yet
  * @return The value the callback returned, or CALLBACK_FAILED if it failed
  */
 uint16 GetVehicleCallback(CallbackID callback, uint32 param1, uint32 param2, EngineID engine, const Vehicle *v)
@@ -1238,8 +1252,7 @@ void CommitVehicleListOrderChanges()
 {
 	/* Pre-sort engines by scope-grfid and local index */
 	std::vector<EngineID> ordering;
-	Engine *e;
-	FOR_ALL_ENGINES(e) {
+	for (const Engine *e : Engine::Iterate()) {
 		ordering.push_back(e->index);
 	}
 	std::sort(ordering.begin(), ordering.end(), EnginePreSort);

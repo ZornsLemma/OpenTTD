@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -96,8 +94,7 @@ bool VerifyTownName(uint32 r, const TownNameParams *par, TownNames *town_names)
 		if (town_names->find(buf1) != town_names->end()) return false;
 		town_names->insert(buf1);
 	} else {
-		const Town *t;
-		FOR_ALL_TOWNS(t) {
+		for (const Town *t : Town::Iterate()) {
 			/* We can't just compare the numbers since
 			 * several numbers may map to a single name. */
 			const char *buf = t->name;
@@ -124,7 +121,7 @@ bool GenerateTownName(uint32 *townnameparts, TownNames *town_names)
 	TownNameParams par(_settings_game.game_creation.town_name);
 
 	/* This function is called very often without entering the gameloop
-	 * inbetween. So reset layout cache to prevent it from growing too big. */
+	 * in between. So reset layout cache to prevent it from growing too big. */
 	Layouter::ReduceLineCache();
 
 	/* Do not set i too low, since when we run out of names, we loop

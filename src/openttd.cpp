@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -361,6 +359,18 @@ void MakeNewgameSettingsLive()
 	/* Copy newgame settings to active settings.
 	 * Also initialise old settings needed for savegame conversion. */
 	_settings_game = _settings_newgame;
+
+	/* Really copy the char*, instead of just copying a pointer reference.  The aim is avoiding double frees.
+	 * I´m not sure wether there is a more elegant solution for this.  Maybe it is even a null issue; in case the copy
+	 * in _settings_game is never freed, there wouldn´t be any problem anyway.
+	 * Compare also the short forum discussion near http://www.tt-forums.net/viewtopic.php?f=33&t=71970&start=180#p1159035
+	 * One suggestion there was to switch to std::string for those strings.  Would need code conversions at other places
+	 * though.
+	 */
+	if (_settings_game.game_creation.rainfall.town_placers != NULL) {
+		_settings_game.game_creation.rainfall.town_placers = stredup(_settings_game.game_creation.rainfall.town_placers);
+	}
+
 	_old_vds = _settings_client.company.vehicle;
 
 	for (CompanyID c = COMPANY_FIRST; c < MAX_COMPANIES; c++) {
@@ -806,7 +816,7 @@ int openttd_main(int argc, char *argv[])
 	if (sounds_set == nullptr && BaseSounds::ini_set != nullptr) sounds_set = stredup(BaseSounds::ini_set);
 	if (!BaseSounds::SetSet(sounds_set)) {
 		if (StrEmpty(sounds_set) || !BaseSounds::SetSet(nullptr)) {
-			usererror("Failed to find a sounds set. Please acquire a sounds set for OpenTTD. See section 4.1 of README.md.");
+			usererror("Failed to find a sounds set. Please acquire a sounds set for OpenTTD. See section 1.4 of README.md.");
 		} else {
 			ErrorMessageData msg(STR_CONFIG_ERROR, STR_CONFIG_ERROR_INVALID_BASE_SOUNDS_NOT_FOUND);
 			msg.SetDParamStr(0, sounds_set);
@@ -819,7 +829,7 @@ int openttd_main(int argc, char *argv[])
 	if (music_set == nullptr && BaseMusic::ini_set != nullptr) music_set = stredup(BaseMusic::ini_set);
 	if (!BaseMusic::SetSet(music_set)) {
 		if (StrEmpty(music_set) || !BaseMusic::SetSet(nullptr)) {
-			usererror("Failed to find a music set. Please acquire a music set for OpenTTD. See section 4.1 of README.md.");
+			usererror("Failed to find a music set. Please acquire a music set for OpenTTD. See section 1.4 of README.md.");
 		} else {
 			ErrorMessageData msg(STR_CONFIG_ERROR, STR_CONFIG_ERROR_INVALID_BASE_MUSIC_NOT_FOUND);
 			msg.SetDParamStr(0, music_set);
@@ -1190,8 +1200,7 @@ static void CheckCaches()
 
 	/* Check the town caches. */
 	std::vector<TownCache> old_town_caches;
-	Town *t;
-	FOR_ALL_TOWNS(t) {
+	for (const Town *t : Town::Iterate()) {
 		old_town_caches.push_back(t->cache);
 	}
 
@@ -1200,7 +1209,7 @@ static void CheckCaches()
 	RebuildSubsidisedSourceAndDestinationCache();
 
 	uint i = 0;
-	FOR_ALL_TOWNS(t) {
+	for (Town *t : Town::Iterate()) {
 		if (MemCmpT(old_town_caches.data() + i, &t->cache) != 0) {
 			DEBUG(desync, 2, "town cache mismatch: town %i", (int)t->index);
 		}
@@ -1209,14 +1218,13 @@ static void CheckCaches()
 
 	/* Check company infrastructure cache. */
 	std::vector<CompanyInfrastructure> old_infrastructure;
-	Company *c;
-	FOR_ALL_COMPANIES(c) old_infrastructure.push_back(c->infrastructure);
+	for (const Company *c : Company::Iterate()) old_infrastructure.push_back(c->infrastructure);
 
 	extern void AfterLoadCompanyStats();
 	AfterLoadCompanyStats();
 
 	i = 0;
-	FOR_ALL_COMPANIES(c) {
+	for (const Company *c : Company::Iterate()) {
 		if (MemCmpT(old_infrastructure.data() + i, &c->infrastructure) != 0) {
 			DEBUG(desync, 2, "infrastructure cache mismatch: company %i", (int)c->index);
 		}
@@ -1224,8 +1232,7 @@ static void CheckCaches()
 	}
 
 	/* Strict checking of the road stop cache entries */
-	const RoadStop *rs;
-	FOR_ALL_ROADSTOPS(rs) {
+	for (const RoadStop *rs : RoadStop::Iterate()) {
 		if (IsStandardRoadStopTile(rs->xy)) continue;
 
 		assert(rs->GetEntry(DIAGDIR_NE) != rs->GetEntry(DIAGDIR_NW));
@@ -1233,8 +1240,7 @@ static void CheckCaches()
 		rs->GetEntry(DIAGDIR_NW)->CheckIntegrity(rs);
 	}
 
-	Vehicle *v;
-	FOR_ALL_VEHICLES(v) {
+	for (Vehicle *v : Vehicle::Iterate()) {
 		extern void FillNewGRFVehicleCache(const Vehicle *v);
 		if (v != v->First() || v->vehstatus & VS_CRASHED || !v->IsPrimaryVehicle()) continue;
 
@@ -1309,15 +1315,14 @@ static void CheckCaches()
 	}
 
 	/* Check whether the caches are still valid */
-	FOR_ALL_VEHICLES(v) {
+	for (Vehicle *v : Vehicle::Iterate()) {
 		byte buff[sizeof(VehicleCargoList)];
 		memcpy(buff, &v->cargo, sizeof(VehicleCargoList));
 		v->cargo.InvalidateCache();
 		assert(memcmp(&v->cargo, buff, sizeof(VehicleCargoList)) == 0);
 	}
 
-	Station *st;
-	FOR_ALL_STATIONS(st) {
+	for (Station *st : Station::Iterate()) {
 		for (CargoID c = 0; c < NUM_CARGO; c++) {
 			byte buff[sizeof(StationCargoList)];
 			memcpy(buff, &st->goods[c].cargo, sizeof(StationCargoList));

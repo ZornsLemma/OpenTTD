@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -89,15 +87,6 @@ public:
 		memset(&this->address, 0, sizeof(this->address));
 		this->address.ss_family = family;
 		this->SetPort(port);
-	}
-
-	/**
-	 * Make a clone of another address
-	 * @param address the address to clone
-	 */
-	NetworkAddress(const NetworkAddress &address)
-	{
-		memcpy(this, &address, sizeof(*this));
 	}
 
 	const char *GetHostname();

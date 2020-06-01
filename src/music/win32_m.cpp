@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -83,7 +81,7 @@ static void TransmitSysex(const byte *&msg_start, size_t &remaining)
 
 	/* prepare header */
 	MIDIHDR *hdr = CallocT<MIDIHDR>(1);
-	hdr->lpData = (LPSTR)msg_start;
+	hdr->lpData = reinterpret_cast<LPSTR>(const_cast<byte *>(msg_start));
 	hdr->dwBufferLength = msg_end - msg_start;
 	if (midiOutPrepareHeader(_midi.midi_out, hdr, sizeof(*hdr)) == MMSYSERR_NOERROR) {
 		/* transmit - just point directly into the data buffer */
@@ -328,7 +326,7 @@ void MusicDriver_Win32::PlaySong(const MusicSongInfo &song)
 	if (!new_song.LoadSong(song)) return;
 	DEBUG(driver, 2, "Win32-MIDI: PlaySong: Loaded song");
 
-	std::lock_guard mutex_lock(_midi.lock);
+	std::lock_guard<std::mutex> mutex_lock(_midi.lock);
 
 	_midi.next_file.MoveFrom(new_song);
 	_midi.next_segment.start = song.override_start;
@@ -348,7 +346,7 @@ void MusicDriver_Win32::PlaySong(const MusicSongInfo &song)
 void MusicDriver_Win32::StopSong()
 {
 	DEBUG(driver, 2, "Win32-MIDI: StopSong: entry");
-	std::lock_guard mutex_lock(_midi.lock);
+	std::lock_guard<std::mutex> mutex_lock(_midi.lock);
 	DEBUG(driver, 2, "Win32-MIDI: StopSong: setting flag");
 	_midi.do_stop = true;
 }
@@ -360,7 +358,7 @@ bool MusicDriver_Win32::IsSongPlaying()
 
 void MusicDriver_Win32::SetVolume(byte vol)
 {
-	std::lock_guard mutex_lock(_midi.lock);
+	std::lock_guard<std::mutex> mutex_lock(_midi.lock);
 	_midi.new_volume = vol;
 }
 
@@ -369,10 +367,30 @@ const char *MusicDriver_Win32::Start(const char * const *parm)
 	DEBUG(driver, 2, "Win32-MIDI: Start: initializing");
 
 	int resolution = GetDriverParamInt(parm, "resolution", 5);
-	int port = GetDriverParamInt(parm, "port", -1);
+	uint port = (uint)GetDriverParamInt(parm, "port", UINT_MAX);
+	const char *portname = GetDriverParam(parm, "portname");
+
+	/* Enumerate ports either for selecting port by name, or for debug output */
+	if (portname != nullptr || _debug_driver_level > 0) {
+		uint numports = midiOutGetNumDevs();
+		DEBUG(driver, 1, "Win32-MIDI: Found %d output devices:", numports);
+		for (uint tryport = 0; tryport < numports; tryport++) {
+			MIDIOUTCAPS moc{};
+			if (midiOutGetDevCaps(tryport, &moc, sizeof(moc)) == MMSYSERR_NOERROR) {
+				char tryportname[128];
+				convert_from_fs(moc.szPname, tryportname, lengthof(tryportname));
+
+				/* Compare requested and detected port name.
+				 * If multiple ports have the same name, this will select the last matching port, and the debug output will be confusing. */
+				if (portname != nullptr && strncmp(tryportname, portname, lengthof(tryportname)) == 0) port = tryport;
+
+				DEBUG(driver, 1, "MIDI port %2d: %s%s", tryport, tryportname, (tryport == port) ? " [selected]" : "");
+			}
+		}
+	}
 
 	UINT devid;
-	if (port < 0) {
+	if (port == UINT_MAX) {
 		devid = MIDI_MAPPER;
 	} else {
 		devid = (UINT)port;
@@ -402,7 +420,7 @@ const char *MusicDriver_Win32::Start(const char * const *parm)
 
 void MusicDriver_Win32::Stop()
 {
-	std::lock_guard mutex_lock(_midi.lock);
+	std::lock_guard<std::mutex> mutex_lock(_midi.lock);
 
 	if (_midi.timer_id) {
 		timeKillEvent(_midi.timer_id);

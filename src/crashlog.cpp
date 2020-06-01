@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -61,9 +59,9 @@
 #ifdef WITH_LZO
 #include <lzo/lzo1x.h>
 #endif
-#ifdef WITH_SDL
+#if defined(WITH_SDL) || defined(WITH_SDL2)
 #	include <SDL.h>
-#endif /* WITH_SDL */
+#endif /* WITH_SDL || WITH_SDL2 */
 #ifdef WITH_ZLIB
 # include <zlib.h>
 #endif
@@ -195,8 +193,7 @@ char *CrashLog::LogConfiguration(char *buffer, const char *last) const
 	);
 
 	buffer += seprintf(buffer, last, "AI Configuration (local: %i) (current: %i):\n", (int)_local_company, (int)_current_company);
-	const Company *c;
-	FOR_ALL_COMPANIES(c) {
+	for (const Company *c : Company::Iterate()) {
 		if (c->ai_info == nullptr) {
 			buffer += seprintf(buffer, last, " %2i: Human\n", (int)c->index);
 		} else {
@@ -267,9 +264,13 @@ char *CrashLog::LogLibraries(char *buffer, const char *last) const
 #endif /* WITH_PNG */
 
 #ifdef WITH_SDL
-	const SDL_version *v = SDL_Linked_Version();
-	buffer += seprintf(buffer, last, " SDL:        %d.%d.%d\n", v->major, v->minor, v->patch);
-#endif /* WITH_SDL */
+	const SDL_version *sdl_v = SDL_Linked_Version();
+	buffer += seprintf(buffer, last, " SDL1:       %d.%d.%d\n", sdl_v->major, sdl_v->minor, sdl_v->patch);
+#elif defined(WITH_SDL2)
+	SDL_version sdl2_v;
+	SDL_GetVersion(&sdl2_v);
+	buffer += seprintf(buffer, last, " SDL2:       %d.%d.%d\n", sdl2_v.major, sdl2_v.minor, sdl2_v.patch);
+#endif
 
 #ifdef WITH_ZLIB
 	buffer += seprintf(buffer, last, " Zlib:       %s\n", zlibVersion());

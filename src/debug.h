@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -85,7 +83,7 @@ const char *GetDebugString();
  * TIC() / TOC() creates its own block, so make sure not the mangle
  *  it with another block.
  *
- * The output is counted in CPU cycles, and not comparable accross
+ * The output is counted in CPU cycles, and not comparable across
  *  machines. Mainly useful for local optimisations.
  **/
 #define TIC() {\

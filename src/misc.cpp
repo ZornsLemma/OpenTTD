@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -31,6 +29,7 @@
 #include "station_kdtree.h"
 #include "town_kdtree.h"
 #include "viewport_kdtree.h"
+#include "newgrf_profiling.h"
 
 #include "safeguards.h"
 
@@ -47,6 +46,7 @@ void InitializeAirportGui();
 void InitializeDockGui();
 void InitializeGraphGui();
 void InitializeObjectGui();
+void InitializeTownGui();
 void InitializeIndustries();
 void InitializeObjects();
 void InitializeTrees();
@@ -69,6 +69,8 @@ void InitializeGame(uint size_x, uint size_y, bool reset_date, bool reset_settin
 	_cur_tileloop_tile = 1;
 	_thd.redsq = INVALID_TILE;
 	if (reset_settings) MakeNewgameSettingsLive();
+
+	_newgrf_profilers.clear();
 
 	if (reset_date) {
 		SetDate(ConvertYMDToDate(_settings_game.game_creation.starting_year, 0, 1), 0);
@@ -97,6 +99,7 @@ void InitializeGame(uint size_x, uint size_y, bool reset_date, bool reset_settin
 	InitializeDockGui();
 	InitializeGraphGui();
 	InitializeObjectGui();
+	InitializeTownGui();
 	InitializeAIGui();
 	InitializeTrees();
 	InitializeIndustries();

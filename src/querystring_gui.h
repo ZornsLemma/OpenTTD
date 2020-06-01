@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -67,6 +65,8 @@ public:
 		return this->text.buf;
 	}
 
+	void SetString(StringID str);
+
 	/**
 	 * Get the position of the caret in the text buffer.
 	 * @return Pointer to the caret in the text buffer.
@@ -79,7 +79,7 @@ public:
 	/**
 	 * Get the currently marked text.
 	 * @param[out] length Length of the marked text.
-	 * @return Begining of the marked area or nullptr if no text is marked.
+	 * @return Beginning of the marked area or nullptr if no text is marked.
 	 */
 	const char *GetMarkedText(size_t *length) const
 	{

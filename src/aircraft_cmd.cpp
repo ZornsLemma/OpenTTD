@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -121,13 +119,27 @@ enum HelicopterRotorStates {
  */
 static StationID FindNearestHangar(const Aircraft *v)
 {
-	const Station *st;
 	uint best = 0;
 	StationID index = INVALID_STATION;
 	TileIndex vtile = TileVirtXY(v->x_pos, v->y_pos);
 	const AircraftVehicleInfo *avi = AircraftVehInfo(v->engine_type);
+	uint max_range = v->acache.cached_max_range_sqr;
 
-	FOR_ALL_STATIONS(st) {
+	/* Determine destinations where it's coming from and where it's heading to */
+	const Station *last_dest = nullptr;
+	const Station *next_dest = nullptr;
+	if (max_range != 0) {
+		if (v->current_order.IsType(OT_GOTO_STATION) ||
+				(v->current_order.IsType(OT_GOTO_DEPOT) && v->current_order.GetDepotActionType() != ODATFB_NEAREST_DEPOT)) {
+			last_dest = Station::GetIfValid(v->last_station_visited);
+			next_dest = Station::GetIfValid(v->current_order.GetDestination());
+		} else {
+			last_dest = GetTargetAirportIfValid(v);
+			next_dest = Station::GetIfValid(v->GetNextStoppingStation().value);
+		}
+	}
+
+	for (const Station *st : Station::Iterate()) {
 		if (st->owner != v->owner || !(st->facilities & FACIL_AIRPORT) || !st->airport.HasHangar()) continue;
 
 		const AirportFTAClass *afc = st->airport.GetFTA();
@@ -138,13 +150,15 @@ static StationID FindNearestHangar(const Aircraft *v)
 		/* the plane won't land at any helicopter station */
 		if (!(afc->flags & AirportFTAClass::AIRPLANES) && (avi->subtype & AIR_CTOL)) continue;
 
+		/* Check if our last and next destinations can be reached from the depot airport. */
+		if (max_range != 0) {
+			uint last_dist = (last_dest != nullptr && last_dest->airport.tile != INVALID_TILE) ? DistanceSquare(st->airport.tile, last_dest->airport.tile) : 0;
+			uint next_dist = (next_dest != nullptr && next_dest->airport.tile != INVALID_TILE) ? DistanceSquare(st->airport.tile, next_dest->airport.tile) : 0;
+			if (last_dist > max_range || next_dist > max_range) continue;
+		}
+
 		/* v->tile can't be used here, when aircraft is flying v->tile is set to 0 */
 		uint distance = DistanceSquare(vtile, st->airport.tile);
-		if (v->acache.cached_max_range_sqr != 0) {
-			/* Check if our current destination can be reached from the depot airport. */
-			const Station *cur_dest = GetTargetAirportIfValid(v);
-			if (cur_dest != nullptr && DistanceSquare(st->airport.tile, cur_dest->airport.tile) > v->acache.cached_max_range_sqr) continue;
-		}
 		if (distance < best || index == INVALID_STATION) {
 			best = distance;
 			index = st->index;
@@ -1815,7 +1829,7 @@ static bool AirportHasBlock(Aircraft *v, const AirportFTA *current_pos, const Ai
  * "reserve" a block for the plane
  * @param v airplane that requires the operation
  * @param current_pos of the vehicle in the list of blocks
- * @param apc airport on which block is requsted to be set
+ * @param apc airport on which block is requested to be set
  * @returns true on success. Eg, next block was free and we have occupied it
  */
 static bool AirportSetBlocks(Aircraft *v, const AirportFTA *current_pos, const AirportFTAClass *apc)
@@ -1925,8 +1939,8 @@ static uint GetNumTerminals(const AirportFTAClass *apc)
 static bool AirportFindFreeTerminal(Aircraft *v, const AirportFTAClass *apc)
 {
 	/* example of more terminalgroups
-	 * {0,HANGAR,NOTHING_block,1}, {0,255,TERM_GROUP1_block,0}, {0,255,TERM_GROUP2_ENTER_block,1}, {0,0,N,1},
-	 * Heading 255 denotes a group. We see 2 groups here:
+	 * {0,HANGAR,NOTHING_block,1}, {0,TERMGROUP,TERM_GROUP1_block,0}, {0,TERMGROUP,TERM_GROUP2_ENTER_block,1}, {0,0,N,1},
+	 * Heading TERMGROUP denotes a group. We see 2 groups here:
 	 * 1. group 0 -- TERM_GROUP1_block (check block)
 	 * 2. group 1 -- TERM_GROUP2_ENTER_block (check block)
 	 * First in line is checked first, group 0. If the block (TERM_GROUP1_block) is free, it
@@ -1939,7 +1953,7 @@ static bool AirportFindFreeTerminal(Aircraft *v, const AirportFTAClass *apc)
 		const AirportFTA *temp = apc->layout[v->pos].next;
 
 		while (temp != nullptr) {
-			if (temp->heading == 255) {
+			if (temp->heading == TERMGROUP) {
 				if (!(st->airport.flags & temp->block)) {
 					/* read which group do we want to go to?
 					 * (the first free group) */
@@ -2099,8 +2113,7 @@ void UpdateAirplanesOnNewStation(const Station *st)
 	const AirportFTAClass *ap = st->airport.GetFTA();
 	Direction rotation = st->airport.tile == INVALID_TILE ? DIR_N : st->airport.rotation;
 
-	Aircraft *v;
-	FOR_ALL_AIRCRAFT(v) {
+	for (Aircraft *v : Aircraft::Iterate()) {
 		if (!v->IsNormalAircraft() || v->targetairport != st->index) continue;
 		assert(v->state == FLYING);
 

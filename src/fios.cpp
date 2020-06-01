@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -57,7 +55,7 @@ bool FiosItem::operator< (const FiosItem &other) const
 	if ((_savegame_sort_order & SORT_BY_NAME) == 0 && (*this).mtime != other.mtime) {
 		r = (*this).mtime - other.mtime;
 	} else {
-		r = strcasecmp((*this).title, other.title);
+		r = strnatcmp((*this).title, other.title);
 	}
 	if (r == 0) return false;
 	return (_savegame_sort_order & SORT_DESCENDING) ? r > 0 : r < 0;
@@ -205,12 +203,18 @@ const char *FiosBrowseTo(const FiosItem *item)
  */
 static void FiosMakeFilename(char *buf, const char *path, const char *name, const char *ext, const char *last)
 {
-	const char *period;
+	if (path != nullptr) {
+		const char *buf_start = buf;
+		buf = strecpy(buf, path, last);
+		/* Remove trailing path separator, if present */
+		if (buf > buf_start && buf[-1] == PATHSEPCHAR) buf--;
+	}
 
 	/* Don't append the extension if it is already there */
-	period = strrchr(name, '.');
+	const char *period = strrchr(name, '.');
 	if (period != nullptr && strcasecmp(period, ext) == 0) ext = "";
-	seprintf(buf, last, "%s" PATHSEP "%s%s", path, name, ext);
+
+	seprintf(buf, last, PATHSEP "%s%s", name, ext);
 }
 
 /**
@@ -300,13 +304,29 @@ bool FiosFileScanner::AddFile(const char *filename, size_t basepath_length, cons
 
 	FiosItem *fios = file_list.Append();
 #ifdef _WIN32
-	struct _stat sb;
-	if (_tstat(OTTD2FS(filename), &sb) == 0) {
+	// Retrieve the file modified date using GetFileTime rather than stat to work around an obscure MSVC bug that affects Windows XP
+	HANDLE fh = CreateFile(OTTD2FS(filename), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+
+	if (fh != INVALID_HANDLE_VALUE) {
+		FILETIME ft;
+		ULARGE_INTEGER ft_int64;
+
+		if (GetFileTime(fh, nullptr, nullptr, &ft) != 0) {
+			ft_int64.HighPart = ft.dwHighDateTime;
+			ft_int64.LowPart = ft.dwLowDateTime;
+
+			// Convert from hectonanoseconds since 01/01/1601 to seconds since 01/01/1970
+			fios->mtime = ft_int64.QuadPart / 10000000ULL - 11644473600ULL;
+		} else {
+			fios->mtime = 0;
+		}
+
+		CloseHandle(fh);
 #else
 	struct stat sb;
 	if (stat(filename, &sb) == 0) {
-#endif
 		fios->mtime = sb.st_mtime;
+#endif
 	} else {
 		fios->mtime = 0;
 	}

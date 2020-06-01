@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -279,7 +277,7 @@ void IndustryOverrideManager::SetEntitySpec(IndustrySpec *inds)
 	}
 
 	/* Now that we know we can use the given id, copy the spec to its final destination... */
-	memcpy(&_industry_specs[ind_id], inds, sizeof(*inds));
+	_industry_specs[ind_id] = *inds;
 	/* ... and mark it as usable*/
 	_industry_specs[ind_id].enabled = true;
 }
@@ -650,7 +648,7 @@ void NewGRFSpriteLayout::AllocateRegisters()
 /**
  * Prepares a sprite layout before resolving action-1-2-3 chains.
  * Integrates offsets into the layout and determines which chains to resolve.
- * @note The function uses statically allocated temporary storage, which is reused everytime when calling the function.
+ * @note The function uses statically allocated temporary storage, which is reused every time when calling the function.
  *       That means, you have to use the sprite layout before calling #PrepareLayout() the next time.
  * @param orig_offset          Offset to apply to non-action-1 sprites.
  * @param newgrf_ground_offset Offset to apply to action-1 ground sprites.

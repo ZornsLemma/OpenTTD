@@ -1,5 +1,3 @@
-/* $Id$ */
-
 /*
  * This file is part of OpenTTD.
  * OpenTTD is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2.
@@ -72,6 +70,16 @@ protected:
 	 * Executes a raw DoCommand for the script.
 	 */
 	static bool DoCommand(TileIndex tile, uint32 p1, uint32 p2, uint cmd, const char *text = nullptr, Script_SuspendCallbackProc *callback = nullptr);
+
+	/**
+	 * Store the latest command executed by the script.
+	 */
+	static void SetLastCommand(TileIndex tile, uint32 p1, uint32 p2, uint cmd);
+
+	/**
+	 * Check if it's the latest command executed by the script.
+	 */
+	static bool CheckLastCommand(TileIndex tile, uint32 p1, uint32 p2, uint cmd);
 
 	/**
 	 * Sets the DoCommand costs counter to a value.
