@@ -66,8 +66,8 @@ static const int DEF_FEW_RIVERS_WIDER_RIVERS_ENABLED = 0;       ///< If few rive
 static const int DEF_MODERATE_RIVERS_WIDER_RIVERS_ENABLED = 1;  ///< Generate rivers with really much flow wider, if "Moderate Rivers" are chosen.
 static const int DEF_LOT_RIVERS_WIDER_RIVERS_ENABLED = 1;       ///< Generate rivers with really much flow wider, if "Lot of Rivers" are chosen.
 
-static const int MIN_WIDER_RIVERS_MULTIPLIER = 40;              ///< 1 would mean infinitely wide rivers, thus we need at least value two.
-static const int DEF_WIDER_RIVERS_MULTIPLIER = 20;              ///< Value 10 means, that for minimum necessary river flow 200, rivers with more than 2000 (20000, 200000) flow are 2 (3, 4) tiles wide.
+static const int MIN_WIDER_RIVERS_MULTIPLIER = 20;              ///< 1 would mean infinitely wide rivers, thus we need at least value two.
+static const int DEF_WIDER_RIVERS_MULTIPLIER = 40;              ///< Value 10 means, that for minimum necessary river flow 200, rivers with more than 2000 (20000, 200000) flow are 2 (3, 4) tiles wide.
 static const int MAX_WIDER_RIVERS_MULTIPLIER = INT16_MAX;       ///< If the bound is high, no wider rivers will be generated, but this is a valid choice.
 
 static const int DEF_WIDER_VALLEYS_ENABLED = 0;                 ///< Regard this a as an expert setting a user can enable if appropriate for the generated map at hand
